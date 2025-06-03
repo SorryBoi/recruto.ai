@@ -9,6 +9,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>{children}</body>
+      <title>Recruto.AI</title>
     </html>
   )
 }
