@@ -1,6 +1,12 @@
 import type { Metadata } from 'next'
 import './globals.css'
 
+export const metadata: Metadata = {
+  title: 'Recruto.AI',
+  description: 'Created for Job Prep',
+  generator: 'preeth',
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -9,7 +15,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>{children}</body>
-      <title>Recruto.AI</title>
     </html>
   )
 }
