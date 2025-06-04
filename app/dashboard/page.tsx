@@ -1,32 +1,23 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Target, LogOut, User, BookOpen, TrendingUp, Award, AlertTriangle } from "lucide-react"
+import { Target, LogOut, User, BookOpen, TrendingUp, Award, Play, BarChart3 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import { signOutUser } from "@/lib/auth"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 
 export default function DashboardPage() {
   const { user, userProfile, loading } = useAuth()
   const router = useRouter()
-  const [firestoreError, setFirestoreError] = useState(false)
 
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login")
     }
   }, [user, loading, router])
-
-  // Check if we have a Firestore permissions error
-  useEffect(() => {
-    if (user && userProfile && !userProfile.email) {
-      setFirestoreError(true)
-    }
-  }, [user, userProfile])
 
   const handleSignOut = async () => {
     try {
@@ -35,6 +26,14 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Error signing out:", error)
     }
+  }
+
+  const handleStartInterview = () => {
+    router.push("/interview")
+  }
+
+  const handleViewAnalytics = () => {
+    router.push("/analytics")
   }
 
   if (loading) {
@@ -83,16 +82,6 @@ export default function DashboardPage() {
 
       {/* Dashboard Content */}
       <div className="container mx-auto px-4 lg:px-6 py-8">
-        {firestoreError && (
-          <Alert variant="warning" className="mb-6">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Firestore Access Issue</AlertTitle>
-            <AlertDescription>
-              We're having trouble accessing your complete profile data. Some features may be limited.
-            </AlertDescription>
-          </Alert>
-        )}
-
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome to your Dashboard</h1>
           <p className="text-gray-600">Start your interview preparation journey with our AI-powered tools</p>
@@ -136,23 +125,33 @@ export default function DashboardPage() {
 
         {/* Quick Actions */}
         <div className="grid md:grid-cols-2 gap-6">
-          <Card>
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={handleStartInterview}>
             <CardHeader>
-              <CardTitle>Start Mock Interview</CardTitle>
+              <CardTitle className="flex items-center space-x-2">
+                <Play className="w-5 h-5 text-blue-600" />
+                <span>Start Mock Interview</span>
+              </CardTitle>
               <CardDescription>Practice with our AI interviewer and get instant feedback</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">Start Interview</Button>
+              <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+                <Play className="w-4 h-4 mr-2" />
+                Start Interview
+              </Button>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={handleViewAnalytics}>
             <CardHeader>
-              <CardTitle>View Progress</CardTitle>
+              <CardTitle className="flex items-center space-x-2">
+                <BarChart3 className="w-5 h-5 text-green-600" />
+                <span>View Analytics</span>
+              </CardTitle>
               <CardDescription>Track your improvement and see detailed analytics</CardDescription>
             </CardHeader>
             <CardContent>
               <Button variant="outline" className="w-full">
+                <BarChart3 className="w-4 h-4 mr-2" />
                 View Analytics
               </Button>
             </CardContent>
@@ -172,42 +171,19 @@ export default function DashboardPage() {
               <p>
                 <strong>Email:</strong> {user.email || "Not available"}
               </p>
-              {!firestoreError ? (
-                <>
-                  <p>
-                    <strong>Name:</strong> {userProfile?.firstName} {userProfile?.lastName}
-                  </p>
-                  <p>
-                    <strong>Member since:</strong>{" "}
-                    {userProfile?.createdAt
-                      ? new Date(
-                          typeof userProfile.createdAt === "object" && "seconds" in userProfile.createdAt
-                            ? userProfile.createdAt.seconds * 1000
-                            : userProfile.createdAt,
-                        ).toLocaleDateString()
-                      : "N/A"}
-                  </p>
-                  <p>
-                    <strong>Last login:</strong>{" "}
-                    {userProfile?.lastLoginAt
-                      ? new Date(
-                          typeof userProfile.lastLoginAt === "object" && "seconds" in userProfile.lastLoginAt
-                            ? userProfile.lastLoginAt.seconds * 1000
-                            : userProfile.lastLoginAt,
-                        ).toLocaleDateString()
-                      : "N/A"}
-                  </p>
-                </>
-              ) : (
-                <div className="py-2">
-                  <p className="text-amber-600">
-                    Additional profile information is not available due to database permissions.
-                  </p>
-                  <Button variant="outline" size="sm" className="mt-2">
-                    Update Profile
-                  </Button>
-                </div>
-              )}
+              <p>
+                <strong>Name:</strong> {userProfile?.firstName} {userProfile?.lastName}
+              </p>
+              <p>
+                <strong>Member since:</strong>{" "}
+                {userProfile?.createdAt
+                  ? new Date(
+                      typeof userProfile.createdAt === "object" && "seconds" in userProfile.createdAt
+                        ? userProfile.createdAt.seconds * 1000
+                        : userProfile.createdAt,
+                    ).toLocaleDateString()
+                  : new Date().toLocaleDateString()}
+              </p>
             </div>
           </CardContent>
         </Card>
