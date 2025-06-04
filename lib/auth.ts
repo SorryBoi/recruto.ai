@@ -64,6 +64,20 @@ export const signInWithEmail = async (email: string, password: string): Promise<
 
     return user
   } catch (error: any) {
+    // Handle specific error codes
+    if (error.code === "auth/user-not-found") {
+      throw new Error("An account using this email is not created. Please sign up to create an account.")
+    } else if (error.code === "auth/wrong-password") {
+      throw new Error("Incorrect password. Please try again.")
+    } else if (error.code === "auth/invalid-email") {
+      throw new Error("Invalid email address.")
+    } else if (error.code === "auth/user-disabled") {
+      throw new Error("This account has been disabled.")
+    } else if (error.code === "auth/too-many-requests") {
+      throw new Error("Too many failed login attempts. Please try again later.")
+    } else if (error.code === "auth/invalid-credential") {
+      throw new Error("Invalid email or password. Please check your credentials.")
+    }
     throw new Error(error.message)
   }
 }
@@ -72,6 +86,11 @@ export const signInWithEmail = async (email: string, password: string): Promise<
 export const signInWithGoogle = async (): Promise<User> => {
   try {
     const provider = new GoogleAuthProvider()
+    // Add custom parameters to ensure we get a fresh login
+    provider.setCustomParameters({
+      prompt: "select_account",
+    })
+
     const userCredential = await signInWithPopup(auth, provider)
     const user = userCredential.user
 
@@ -101,6 +120,14 @@ export const signInWithGoogle = async (): Promise<User> => {
 
     return user
   } catch (error: any) {
+    // Handle specific Google auth errors
+    if (error.code === "auth/unauthorized-domain") {
+      throw new Error("This domain is not authorized for Google sign-in. Please contact support.")
+    } else if (error.code === "auth/popup-closed-by-user") {
+      throw new Error("Sign-in was cancelled. Please try again.")
+    } else if (error.code === "auth/popup-blocked") {
+      throw new Error("Pop-up was blocked by your browser. Please allow pop-ups and try again.")
+    }
     throw new Error(error.message)
   }
 }

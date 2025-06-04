@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Target, Eye, EyeOff, Mail, Lock, User, ArrowLeft } from "lucide-react"
+import { Target, Eye, EyeOff, Mail, Lock, User, ArrowLeft, AlertCircle } from "lucide-react"
 import { signUpWithEmail, signInWithGoogle } from "@/lib/auth"
 import { useAuth } from "@/contexts/AuthContext"
 import { useEffect } from "react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function SignUpPage() {
   const [firstName, setFirstName] = useState("")
@@ -25,8 +26,19 @@ export default function SignUpPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [acceptTerms, setAcceptTerms] = useState(false)
+  const [showDomainWarning, setShowDomainWarning] = useState(false)
   const router = useRouter()
   const { user } = useAuth()
+
+  // Check if we're on localhost and show domain warning
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const hostname = window.location.hostname
+      if (hostname === "localhost" || hostname === "127.0.0.1") {
+        setShowDomainWarning(true)
+      }
+    }
+  }, [])
 
   // Redirect if already logged in
   useEffect(() => {
@@ -63,7 +75,17 @@ export default function SignUpPage() {
       await signUpWithEmail(email, password, firstName, lastName)
       router.push("/dashboard")
     } catch (error: any) {
-      setError(error.message)
+      console.error("Sign up error:", error)
+      // Handle specific error codes
+      if (error.code === "auth/email-already-in-use") {
+        setError("An account with this email already exists. Please sign in instead.")
+      } else if (error.code === "auth/weak-password") {
+        setError("Password is too weak. Please choose a stronger password.")
+      } else if (error.code === "auth/invalid-email") {
+        setError("Invalid email address.")
+      } else {
+        setError(error.message || "Failed to create account. Please try again.")
+      }
     } finally {
       setLoading(false)
     }
@@ -77,7 +99,8 @@ export default function SignUpPage() {
       await signInWithGoogle()
       router.push("/dashboard")
     } catch (error: any) {
-      setError(error.message)
+      console.error("Google sign up error:", error)
+      setError(error.message || "Failed to sign up with Google.")
     } finally {
       setLoading(false)
     }
@@ -103,6 +126,29 @@ export default function SignUpPage() {
           <Badge className="bg-blue-100 text-blue-800">Join Thousands of Success Stories!</Badge>
         </div>
 
+        {/* Domain Warning for localhost */}
+        {showDomainWarning && (
+          <Alert className="mb-6 border-amber-200 bg-amber-50">
+            <AlertCircle className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-800">
+              <strong>Development Mode:</strong> Google sign-up may not work on localhost.
+              <Link href="#email-signup" className="underline ml-1">
+                Use email signup instead
+              </Link>{" "}
+              or
+              <a
+                href="https://console.firebase.google.com/project/weatherly-90ceb/authentication/settings"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline ml-1"
+              >
+                add localhost to authorized domains
+              </a>
+              .
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Sign Up Form */}
         <Card className="border-0 shadow-xl">
           <CardHeader className="text-center">
@@ -112,10 +158,13 @@ export default function SignUpPage() {
 
           <CardContent className="space-y-6">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">{error}</div>
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
 
-            <form onSubmit={handleSignUp} className="space-y-4">
+            <form onSubmit={handleSignUp} className="space-y-4" id="email-signup">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">First Name</label>
