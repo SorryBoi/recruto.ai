@@ -27,6 +27,9 @@ import {
 import Link from "next/link"
 import Image from "next/image"
 
+// Add this import at the top of the file
+import FirebaseDebugger from "@/components/FirebaseDebugger"
+
 // Typewriter Animation Component
 function TypewriterText() {
   const phrases = ["Land Your Dream Job", "Ace Every Interview", "Build Confidence", "Unlock Your Potential"]
@@ -187,10 +190,14 @@ export default function LandingPage() {
             </nav>
 
             <div className="flex items-center space-x-4">
-              <Button variant="ghost" className="text-gray-600 hover:text-blue-600">
-                Login
-              </Button>
-              <Button className="bg-blue-600 hover:bg-blue-700 text-white">Sign Up</Button>
+              <Link href="/login">
+                <Button variant="ghost" className="text-gray-600 hover:text-blue-600">
+                  Login
+                </Button>
+              </Link>
+              <Link href="/signup">
+                <Button className="bg-blue-600 hover:bg-blue-700 text-white">Sign Up</Button>
+              </Link>
             </div>
           </div>
         </div>
@@ -729,6 +736,7 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+      <FirebaseDebugger />
     </div>
   )
 }
