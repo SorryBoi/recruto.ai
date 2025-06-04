@@ -81,6 +81,7 @@ export class AIInterviewer {
       return JSON.parse(text)
     } catch (error) {
       console.error("Error generating question:", error)
+      // Return fallback question without error context
       return this.getFallbackQuestion()
     }
   }
@@ -229,14 +230,16 @@ export class AIInterviewer {
       "Business Analyst": "How would you gather requirements for a new system implementation?",
     }
 
+    const question =
+      fallbackQuestions[this.context.jobRole] || "Tell me about a challenging project you worked on recently."
+
     return {
-      question:
-        fallbackQuestions[this.context.jobRole] || "Tell me about a challenging project you worked on recently.",
+      question,
       questionType: "main",
       category: "General",
       expectedDuration: 3,
       difficulty: this.context.difficulty as "Easy" | "Medium" | "Hard",
-      context: "Fallback question due to AI generation error",
+      context: "", // Remove the error message from context
     }
   }
 

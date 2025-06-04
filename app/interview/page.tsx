@@ -197,48 +197,87 @@ export default function InterviewPage() {
   }
 
   const handleCompleteInterview = async () => {
-    const finalAnswers = [...answers, answer]
-    const finalAnalyses = [...analyses]
-
-    // Calculate overall score
-    const overallScore =
-      finalAnalyses.length > 0
-        ? Math.round(finalAnalyses.reduce((acc, analysis) => acc + analysis.score, 0) / finalAnalyses.length)
-        : 75
-
-    // Generate comprehensive interview summary
-    let interviewSummary
     try {
-      interviewSummary = await generateInterviewSummary(
-        selectedJobRole,
-        selectedDifficulty,
-        questions.map((q) => q.question),
-        finalAnswers,
-        finalAnalyses,
-      )
+      const finalAnswers = [...answers, answer]
+      const finalAnalyses = [...analyses]
+
+      // Calculate overall score
+      const overallScore =
+        finalAnalyses.length > 0
+          ? Math.round(finalAnalyses.reduce((acc, analysis) => acc + analysis.score, 0) / finalAnalyses.length)
+          : 75
+
+      // Generate comprehensive interview summary
+      let interviewSummary = null
+      try {
+        interviewSummary = await generateInterviewSummary(
+          selectedJobRole,
+          selectedDifficulty,
+          questions.map((q) => q.question),
+          finalAnswers,
+          finalAnalyses,
+        )
+      } catch (error) {
+        console.error("Error generating summary:", error)
+        // Provide fallback summary if generation fails
+        interviewSummary = {
+          overallFeedback: "You demonstrated good communication skills throughout the interview.",
+          keyStrengths: ["Communication", "Relevant knowledge"],
+          criticalImprovements: ["Add more specific examples", "Provide more detailed answers"],
+          readinessScore: overallScore,
+          nextSteps: ["Practice with more questions", "Review technical concepts"],
+        }
+      }
+
+      const interviewData = {
+        jobRole: selectedJobRole,
+        difficulty: selectedDifficulty,
+        questions,
+        answers: finalAnswers,
+        analyses: finalAnalyses,
+        timeElapsed,
+        completedAt: new Date().toISOString(),
+        overallScore,
+        interviewSummary,
+      }
+
+      // Save to localStorage with error handling
+      try {
+        // First check if we can stringify the data
+        const interviewDataString = JSON.stringify(interviewData)
+
+        // Then save to localStorage
+        const existingInterviews = JSON.parse(localStorage.getItem("userInterviews") || "[]")
+        const updatedInterviews = [...existingInterviews, interviewData]
+        localStorage.setItem("userInterviews", JSON.stringify(updatedInterviews))
+        localStorage.setItem("lastInterview", interviewDataString)
+      } catch (error) {
+        console.error("Error saving interview data:", error)
+        // Create a simplified version of the data if there's a JSON error
+        const simplifiedData = {
+          jobRole: selectedJobRole,
+          difficulty: selectedDifficulty,
+          questions: questions.map((q) => ({ question: q.question, category: q.category, difficulty: q.difficulty })),
+          answers: finalAnswers,
+          analyses: finalAnalyses.map((a) => ({ score: a.score, strengths: a.strengths, weaknesses: a.weaknesses })),
+          timeElapsed,
+          completedAt: new Date().toISOString(),
+          overallScore,
+        }
+
+        try {
+          localStorage.setItem("lastInterview", JSON.stringify(simplifiedData))
+        } catch (e) {
+          console.error("Failed to save even simplified data:", e)
+        }
+      }
+
+      // Navigate to results page
+      router.push("/interview/results")
     } catch (error) {
-      console.error("Error generating summary:", error)
+      console.error("Error in handleCompleteInterview:", error)
+      alert("There was an error completing your interview. Please try again.")
     }
-
-    const interviewData: InterviewData = {
-      jobRole: selectedJobRole,
-      difficulty: selectedDifficulty,
-      questions,
-      answers: finalAnswers,
-      analyses: finalAnalyses,
-      timeElapsed,
-      completedAt: new Date().toISOString(),
-      overallScore,
-      interviewSummary,
-    }
-
-    // Save to localStorage and update user's interview history
-    const existingInterviews = JSON.parse(localStorage.getItem("userInterviews") || "[]")
-    const updatedInterviews = [...existingInterviews, interviewData]
-    localStorage.setItem("userInterviews", JSON.stringify(updatedInterviews))
-    localStorage.setItem("lastInterview", JSON.stringify(interviewData))
-
-    router.push("/interview/results")
   }
 
   const toggleRecording = () => {
@@ -498,11 +537,12 @@ export default function InterviewPage() {
                         <div>
                           <p className="font-medium text-gray-900 mb-2">AI Interviewer asks:</p>
                           <p className="text-lg text-gray-800">{questions[currentQuestion]?.question}</p>
-                          {questions[currentQuestion]?.context && (
-                            <p className="text-sm text-gray-600 mt-2 italic">
-                              Context: {questions[currentQuestion].context}
-                            </p>
-                          )}
+                          {questions[currentQuestion]?.context &&
+                            !questions[currentQuestion].context.includes("Fallback question") && (
+                              <p className="text-sm text-gray-600 mt-2 italic">
+                                Context: {questions[currentQuestion].context}
+                              </p>
+                            )}
                         </div>
                       </div>
                     </div>

@@ -45,20 +45,34 @@ export default function InterviewResultsPage() {
   const router = useRouter()
   const [interviewData, setInterviewData] = useState<InterviewResult | null>(null)
 
+  // Validate interview data when loading from localStorage
+  useEffect(() => {
+    try {
+      const savedInterview = localStorage.getItem("lastInterview")
+      if (savedInterview) {
+        const parsedData = JSON.parse(savedInterview)
+
+        // Ensure all required properties exist
+        if (!parsedData.questions || !parsedData.answers || !parsedData.analyses) {
+          throw new Error("Invalid interview data structure")
+        }
+
+        setInterviewData(parsedData)
+      } else {
+        router.push("/interview")
+      }
+    } catch (error) {
+      console.error("Error loading interview data:", error)
+      alert("There was an error loading your interview results. Redirecting to dashboard.")
+      router.push("/dashboard")
+    }
+  }, [router])
+
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login")
     }
   }, [user, loading, router])
-
-  useEffect(() => {
-    const savedInterview = localStorage.getItem("lastInterview")
-    if (savedInterview) {
-      setInterviewData(JSON.parse(savedInterview))
-    } else {
-      router.push("/interview")
-    }
-  }, [router])
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -98,8 +112,8 @@ export default function InterviewResultsPage() {
   }
 
   const scoreBadge = getScoreBadge(interviewData.overallScore)
-  const allStrengths = interviewData.analyses.flatMap((a) => a.strengths)
-  const allImprovements = interviewData.analyses.flatMap((a) => a.improvements)
+  const allStrengths = interviewData.analyses?.flatMap((a) => a.strengths || []) || []
+  const allImprovements = interviewData.analyses?.flatMap((a) => a.improvements || []) || []
   const uniqueStrengths = [...new Set(allStrengths)]
   const uniqueImprovements = [...new Set(allImprovements)]
 
