@@ -1,5 +1,5 @@
 import { generateText } from "ai"
-import { openai } from "@ai-sdk/openai"
+import { google } from "@ai-sdk/google"
 
 export interface InterviewContext {
   jobRole: string
@@ -33,99 +33,211 @@ export interface AnswerAnalysis {
   followUpReason?: string
 }
 
+// Smart local question generator as backup
+class SmartQuestionGenerator {
+  private questionBank: { [key: string]: { [key: string]: string[] } } = {
+    "Software Engineer": {
+      "Entry Level": [
+        "Tell me about your programming background and what languages you're most comfortable with.",
+        "How would you explain the difference between a stack and a queue to someone non-technical?",
+        "Describe a coding project you're proud of and the challenges you faced.",
+        "How do you approach debugging when your code isn't working as expected?",
+        "What's the difference between frontend and backend development?",
+      ],
+      "Mid Level": [
+        "Walk me through how you would design a simple web application from scratch.",
+        "Explain the concept of object-oriented programming and give me an example.",
+        "How would you optimize a slow-running database query?",
+        "Describe your experience with version control systems like Git.",
+        "Tell me about a time you had to learn a new technology quickly for a project.",
+      ],
+      "Senior Level": [
+        "How would you architect a system to handle millions of concurrent users?",
+        "Explain the trade-offs between microservices and monolithic architecture.",
+        "Describe your approach to code reviews and mentoring junior developers.",
+        "How do you ensure code quality and maintainability in a large codebase?",
+        "Tell me about a complex technical decision you made and its impact.",
+      ],
+    },
+    "Product Manager": {
+      "Entry Level": [
+        "What interests you about product management and why do you want to pursue this career?",
+        "How would you prioritize features for a mobile app with limited development resources?",
+        "Describe a product you use daily and what you would improve about it.",
+        "How would you gather user feedback for a new feature?",
+        "What metrics would you track for a social media application?",
+      ],
+      "Mid Level": [
+        "Walk me through how you would launch a new product feature from concept to release.",
+        "How do you balance user needs with business requirements when they conflict?",
+        "Describe your experience working with engineering and design teams.",
+        "How would you conduct market research for a new product idea?",
+        "Tell me about a time you had to make a difficult product decision with limited data.",
+      ],
+      "Senior Level": [
+        "How would you develop a product strategy for entering a new market?",
+        "Describe your approach to building and managing a product roadmap.",
+        "How do you measure product success and communicate it to stakeholders?",
+        "Tell me about a time you had to pivot a product strategy based on market feedback.",
+        "How do you foster innovation while maintaining product stability?",
+      ],
+    },
+    "Data Scientist": {
+      "Entry Level": [
+        "Explain the difference between supervised and unsupervised machine learning.",
+        "How would you handle missing data in a dataset?",
+        "Describe a data analysis project you've worked on and your approach.",
+        "What's the difference between correlation and causation?",
+        "How would you explain a complex data finding to a non-technical stakeholder?",
+      ],
+      "Mid Level": [
+        "Walk me through your process for building a machine learning model from start to finish.",
+        "How would you evaluate the performance of a classification model?",
+        "Describe your experience with data visualization and which tools you prefer.",
+        "How do you ensure data quality and handle outliers in your analysis?",
+        "Tell me about a time when your analysis led to a significant business decision.",
+      ],
+      "Senior Level": [
+        "How would you design an A/B testing framework for a large-scale application?",
+        "Describe your approach to building data pipelines and ensuring data governance.",
+        "How do you communicate complex statistical concepts to business leaders?",
+        "Tell me about a time you had to challenge business assumptions with data.",
+        "How do you stay current with new developments in machine learning and AI?",
+      ],
+    },
+  }
+
+  generateQuestion(context: InterviewContext): AIResponse {
+    const roleQuestions = this.questionBank[context.jobRole] || this.questionBank["Software Engineer"]
+    const difficultyQuestions = roleQuestions[context.difficulty] || roleQuestions["Entry Level"]
+
+    // Select a question that hasn't been asked yet
+    const availableQuestions = difficultyQuestions.filter(
+      (q) => !context.previousQuestions.some((prev) => prev.includes(q.substring(0, 20))),
+    )
+
+    const question =
+      availableQuestions.length > 0
+        ? availableQuestions[Math.floor(Math.random() * availableQuestions.length)]
+        : difficultyQuestions[Math.floor(Math.random() * difficultyQuestions.length)]
+
+    return {
+      question,
+      questionType: "main",
+      category: this.getCategoryForQuestion(question),
+      expectedDuration: 3,
+      difficulty: context.difficulty as "Easy" | "Medium" | "Hard",
+      context: `Smart-generated question for ${context.jobRole} at ${context.difficulty} level`,
+    }
+  }
+
+  private getCategoryForQuestion(question: string): string {
+    if (
+      question.toLowerCase().includes("technical") ||
+      question.toLowerCase().includes("code") ||
+      question.toLowerCase().includes("system")
+    ) {
+      return "Technical"
+    }
+    if (
+      question.toLowerCase().includes("team") ||
+      question.toLowerCase().includes("time") ||
+      question.toLowerCase().includes("challenge")
+    ) {
+      return "Behavioral"
+    }
+    if (
+      question.toLowerCase().includes("design") ||
+      question.toLowerCase().includes("approach") ||
+      question.toLowerCase().includes("how would you")
+    ) {
+      return "Problem-Solving"
+    }
+    return "General"
+  }
+}
+
 export class AIInterviewer {
   private context: InterviewContext
+  private smartGenerator: SmartQuestionGenerator
+  private useAI = true
 
   constructor(context: InterviewContext) {
     this.context = context
+    this.smartGenerator = new SmartQuestionGenerator()
   }
 
   async generateNextQuestion(): Promise<AIResponse> {
-    console.log("🤖 Generating AI question for:", this.context.jobRole, this.context.difficulty)
+    console.log("🤖 Generating question for:", this.context.jobRole, this.context.difficulty)
 
-    try {
-      const prompt = this.generateQuestionPrompt()
-      console.log("📝 Question prompt:", prompt)
+    // Try AI first, then fall back to smart generator
+    if (this.useAI) {
+      try {
+        return await this.generateAIQuestion()
+      } catch (error) {
+        console.error("❌ AI generation failed, using smart generator:", error)
+        this.useAI = false // Disable AI for this session
+      }
+    }
 
-      const result = await generateText({
-        model: openai("gpt-4o-mini"), // Using gpt-4o-mini for better reliability
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert technical interviewer conducting a ${this.context.difficulty} level interview for a ${this.context.jobRole} position. 
+    // Use smart local generator
+    console.log("🧠 Using smart question generator")
+    return this.smartGenerator.generateQuestion(this.context)
+  }
 
-Your role is to:
-1. Ask relevant, challenging questions that assess the candidate's skills
-2. Adapt question difficulty based on previous performance
-3. Ensure questions are realistic and commonly asked in actual interviews
-4. Vary question types (technical, behavioral, situational, problem-solving)
-5. Create follow-up questions based on candidate responses
-6. Make the interview feel conversational and natural
+  private async generateAIQuestion(): Promise<AIResponse> {
+    const prompt = this.generateQuestionPrompt()
+    console.log("📝 AI Question prompt:", prompt)
 
-Interview Context:
-- Job Role: ${this.context.jobRole}
-- Difficulty: ${this.context.difficulty}
-- Question Number: ${this.context.currentQuestionNumber}
-- Previous Questions: ${this.context.previousQuestions.join("; ")}
-- Previous Scores: ${this.context.previousScores.join(", ")}
+    const result = await generateText({
+      model: google("gemini-1.5-flash"), // Free Google Gemini model
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert interviewer for ${this.context.jobRole} positions. Generate realistic interview questions.
 
-Guidelines for question difficulty:
-- Entry Level: Basic concepts, simple scenarios, foundational knowledge
-- Mid Level: Complex scenarios, system design basics, leadership situations  
-- Senior Level: Advanced concepts, complex system design, strategic thinking
-
-You MUST respond with valid JSON in this exact format:
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
 {
   "question": "Your interview question here",
   "questionType": "main",
   "category": "Technical",
   "expectedDuration": 3,
   "difficulty": "${this.context.difficulty}",
-  "context": "Brief explanation of why you chose this question"
-}`,
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.7,
-        maxTokens: 500,
-      })
+  "context": "Brief explanation"
+}
 
-      console.log("🎯 AI Response received:", result.text)
+Guidelines:
+- ${this.context.difficulty} level questions for ${this.context.jobRole}
+- Make questions realistic and commonly asked
+- Avoid repeating previous questions: ${this.context.previousQuestions.join(", ")}`,
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      temperature: 0.8,
+      maxTokens: 400,
+    })
 
-      // Clean the response text to ensure it's valid JSON
-      let cleanedText = result.text.trim()
+    console.log("🎯 AI Response:", result.text)
 
-      // Remove any markdown code blocks if present
-      if (cleanedText.startsWith("```json")) {
-        cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
-      } else if (cleanedText.startsWith("```")) {
-        cleanedText = cleanedText.replace(/^```\s*/, "").replace(/\s*```$/, "")
-      }
-
-      const aiResponse = JSON.parse(cleanedText)
-
-      // Validate the response structure
-      if (!aiResponse.question || !aiResponse.category) {
-        throw new Error("Invalid AI response structure")
-      }
-
-      console.log("✅ Successfully parsed AI response:", aiResponse)
-      return aiResponse
-    } catch (error) {
-      console.error("❌ Error generating AI question:", error)
-      console.error("Error details:", {
-        message: error.message,
-        stack: error.stack,
-        context: this.context,
-      })
-
-      // Return fallback question with clear indication it's a fallback
-      console.log("🔄 Using fallback question")
-      return this.getFallbackQuestion()
+    // Clean and parse response
+    let cleanedText = result.text.trim()
+    if (cleanedText.startsWith("```json")) {
+      cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
+    } else if (cleanedText.startsWith("```")) {
+      cleanedText = cleanedText.replace(/^```\s*/, "").replace(/\s*```$/, "")
     }
+
+    const aiResponse = JSON.parse(cleanedText)
+
+    if (!aiResponse.question || !aiResponse.category) {
+      throw new Error("Invalid AI response structure")
+    }
+
+    console.log("✅ AI question generated successfully")
+    return aiResponse
   }
 
   private generateQuestionPrompt(): string {
@@ -134,123 +246,114 @@ You MUST respond with valid JSON in this exact format:
         ? this.context.previousScores.reduce((a, b) => a + b, 0) / this.context.previousScores.length
         : 75
 
-    let prompt = `Generate an interview question for a ${this.context.jobRole} candidate at ${this.context.difficulty} level.`
+    let prompt = `Generate interview question ${this.context.currentQuestionNumber} for ${this.context.jobRole} at ${this.context.difficulty} level.`
 
     if (this.context.currentQuestionNumber === 1) {
-      prompt += ` This is the opening question - start with something that helps assess their background and sets the tone for a ${this.context.jobRole} interview.`
+      prompt += " Start with an opening question that assesses background and sets the tone."
     } else {
-      prompt += ` This is question ${this.context.currentQuestionNumber}.`
-
       if (avgScore > 80) {
-        prompt += ` The candidate is performing well (avg score: ${avgScore.toFixed(0)}). Increase difficulty or explore advanced topics.`
+        prompt += " Candidate performing well - increase difficulty."
       } else if (avgScore < 60) {
-        prompt += ` The candidate is struggling (avg score: ${avgScore.toFixed(0)}). Ask more foundational questions or provide easier scenarios.`
-      } else {
-        prompt += ` The candidate is performing adequately (avg score: ${avgScore.toFixed(0)}). Maintain current difficulty level.`
+        prompt += " Candidate struggling - use foundational questions."
       }
     }
-
-    // Add role-specific guidance
-    if (
-      this.context.jobRole.toLowerCase().includes("engineer") ||
-      this.context.jobRole.toLowerCase().includes("developer")
-    ) {
-      prompt += ` Focus on technical skills, coding concepts, system design, and problem-solving approaches.`
-    } else if (this.context.jobRole.toLowerCase().includes("manager")) {
-      prompt += ` Focus on leadership, strategy, team management, and decision-making scenarios.`
-    } else if (this.context.jobRole.toLowerCase().includes("data")) {
-      prompt += ` Focus on data analysis, statistics, machine learning, and data-driven decision making.`
-    } else if (this.context.jobRole.toLowerCase().includes("product")) {
-      prompt += ` Focus on product strategy, user experience, market analysis, and product development lifecycle.`
-    }
-
-    if (this.context.companyType) {
-      prompt += ` Tailor the question for a ${this.context.companyType} company environment.`
-    }
-
-    prompt += ` Make the question realistic and commonly asked in actual ${this.context.jobRole} interviews.`
 
     return prompt
   }
 
   async analyzeAnswer(question: string, answer: string): Promise<AnswerAnalysis> {
-    console.log("🔍 Analyzing answer for question:", question.substring(0, 50) + "...")
+    console.log("🔍 Analyzing answer...")
 
-    try {
-      const result = await generateText({
-        model: openai("gpt-4o-mini"),
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert interview assessor analyzing candidate responses. Provide detailed, constructive feedback that helps candidates improve.
+    if (this.useAI) {
+      try {
+        return await this.generateAIAnalysis(question, answer)
+      } catch (error) {
+        console.error("❌ AI analysis failed, using smart analysis:", error)
+      }
+    }
 
-Scoring Guidelines:
-- 90-100: Exceptional answer - comprehensive, well-structured, demonstrates deep understanding
-- 80-89: Strong answer - good examples, clear communication, shows competence  
-- 70-79: Adequate answer - addresses question but lacks depth or examples
-- 60-69: Weak answer - minimal examples, unclear communication, basic understanding
-- Below 60: Poor answer - doesn't address question, lacks understanding
+    // Smart local analysis
+    return this.generateSmartAnalysis(question, answer)
+  }
 
-Consider:
-- Relevance to the question
-- Depth of knowledge demonstrated
-- Use of specific examples
-- Communication clarity
-- Problem-solving approach
-- Leadership/teamwork aspects (if applicable)
+  private async generateAIAnalysis(question: string, answer: string): Promise<AnswerAnalysis> {
+    const result = await generateText({
+      model: google("gemini-1.5-flash"),
+      messages: [
+        {
+          role: "system",
+          content: `Analyze interview responses and provide constructive feedback.
 
-You MUST respond with valid JSON in this exact format:
+IMPORTANT: Respond ONLY with valid JSON:
 {
   "score": 85,
-  "detailedFeedback": "Comprehensive feedback paragraph",
-  "strengths": ["Specific strength 1", "Specific strength 2"],
-  "weaknesses": ["Specific weakness 1", "Specific weakness 2"],
-  "improvementSuggestions": ["Specific suggestion 1", "Specific suggestion 2"],
-  "idealAnswer": "A better way to answer would be...",
+  "detailedFeedback": "Detailed feedback paragraph",
+  "strengths": ["strength1", "strength2"],
+  "weaknesses": ["weakness1", "weakness2"],
+  "improvementSuggestions": ["suggestion1", "suggestion2"],
+  "idealAnswer": "Better answer example",
   "nextQuestionDirection": "same",
-  "followUpNeeded": false,
-  "followUpReason": "Optional reason for follow-up"
-}`,
-          },
-          {
-            role: "user",
-            content: `Analyze this interview response:
+  "followUpNeeded": false
+}
 
-Job Role: ${this.context.jobRole}
-Difficulty Level: ${this.context.difficulty}
+Scoring: 90-100 excellent, 80-89 good, 70-79 adequate, 60-69 weak, <60 poor`,
+        },
+        {
+          role: "user",
+          content: `Analyze this ${this.context.jobRole} interview response:
 Question: "${question}"
-Candidate's Answer: "${answer}"
+Answer: "${answer}"
+Difficulty: ${this.context.difficulty}`,
+        },
+      ],
+      temperature: 0.3,
+      maxTokens: 600,
+    })
 
-Provide a comprehensive analysis with specific, actionable feedback.`,
-          },
-        ],
-        temperature: 0.3,
-        maxTokens: 800,
-      })
+    let cleanedText = result.text.trim()
+    if (cleanedText.startsWith("```json")) {
+      cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
+    }
 
-      console.log("📊 AI Analysis received:", result.text)
+    return JSON.parse(cleanedText)
+  }
 
-      // Clean the response text
-      let cleanedText = result.text.trim()
-      if (cleanedText.startsWith("```json")) {
-        cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
-      } else if (cleanedText.startsWith("```")) {
-        cleanedText = cleanedText.replace(/^```\s*/, "").replace(/\s*```$/, "")
-      }
+  private generateSmartAnalysis(question: string, answer: string): AnswerAnalysis {
+    const answerLength = answer.trim().length
+    const hasExamples = answer.toLowerCase().includes("example") || answer.toLowerCase().includes("experience")
+    const hasSpecifics = /\d/.test(answer) || answer.includes("%") || answer.includes("$")
 
-      const analysis = JSON.parse(cleanedText)
+    let score = 70 // Base score
 
-      // Validate the analysis structure
-      if (typeof analysis.score !== "number" || !analysis.detailedFeedback) {
-        throw new Error("Invalid analysis response structure")
-      }
+    // Adjust score based on answer quality
+    if (answerLength > 200) score += 10
+    if (hasExamples) score += 10
+    if (hasSpecifics) score += 5
+    if (answerLength < 50) score -= 20
 
-      console.log("✅ Successfully parsed AI analysis:", analysis)
-      return analysis
-    } catch (error) {
-      console.error("❌ Error analyzing answer:", error)
-      console.log("🔄 Using fallback analysis")
-      return this.getFallbackAnalysis()
+    score = Math.max(40, Math.min(95, score))
+
+    return {
+      score,
+      detailedFeedback: `Your answer ${score >= 80 ? "demonstrates good understanding" : "addresses the question but could be stronger"}. ${hasExamples ? "Good use of examples." : "Consider adding specific examples."} ${hasSpecifics ? "Nice inclusion of specific details." : "Adding metrics or specific details would strengthen your response."}`,
+      strengths: [
+        answerLength > 100 ? "Comprehensive response" : "Clear communication",
+        hasExamples ? "Good use of examples" : "Relevant content",
+      ],
+      weaknesses: [
+        answerLength < 100 ? "Could provide more detail" : "Could be more concise",
+        !hasExamples ? "Add specific examples" : "Could include more metrics",
+      ],
+      improvementSuggestions: [
+        "Use the STAR method (Situation, Task, Action, Result)",
+        "Include specific metrics and outcomes",
+        "Provide concrete examples from your experience",
+      ],
+      idealAnswer:
+        "A stronger answer would include specific examples, quantifiable results, and demonstrate clear problem-solving skills using the STAR method.",
+      nextQuestionDirection: score >= 80 ? "harder" : score < 60 ? "easier" : "same",
+      followUpNeeded: Math.random() > 0.6,
+      followUpReason: "To explore your answer in more depth",
     }
   }
 
@@ -259,87 +362,38 @@ Provide a comprehensive analysis with specific, actionable feedback.`,
     answer: string,
     analysis: AnswerAnalysis,
   ): Promise<AIResponse> {
-    console.log("🔄 Generating follow-up question...")
+    // Generate smart follow-up questions
+    const followUps = [
+      "Can you give me a specific example of that?",
+      "How did you measure the success of that approach?",
+      "What would you do differently if you faced that situation again?",
+      "How did you handle any challenges that came up?",
+      "What was the impact of your decision on the team or project?",
+    ]
 
-    try {
-      const result = await generateText({
-        model: openai("gpt-4o-mini"),
-        messages: [
-          {
-            role: "system",
-            content: `You are an experienced interviewer generating a natural follow-up question based on the candidate's response. The follow-up should feel conversational and dig deeper into their answer.
+    const followUp = followUps[Math.floor(Math.random() * followUps.length)]
 
-You MUST respond with valid JSON in this exact format:
-{
-  "question": "Your follow-up question here",
-  "questionType": "followup",
-  "category": "Follow-up",
-  "expectedDuration": 2,
-  "difficulty": "${this.context.difficulty}",
-  "context": "Why this follow-up was chosen"
-}`,
-          },
-          {
-            role: "user",
-            content: `Original question: "${originalQuestion}"
-Candidate's answer: "${answer}"
-Analysis score: ${analysis.score}
-Follow-up reason: ${analysis.followUpReason || "Explore answer further"}
-
-Generate a natural follow-up question that explores their answer further.`,
-          },
-        ],
-        temperature: 0.7,
-        maxTokens: 300,
-      })
-
-      let cleanedText = result.text.trim()
-      if (cleanedText.startsWith("```json")) {
-        cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
-      } else if (cleanedText.startsWith("```")) {
-        cleanedText = cleanedText.replace(/^```\s*/, "").replace(/\s*```$/, "")
-      }
-
-      const followUp = JSON.parse(cleanedText)
-      console.log("✅ Successfully generated follow-up:", followUp)
-      return followUp
-    } catch (error) {
-      console.error("❌ Error generating follow-up:", error)
-      console.log("🔄 Using fallback follow-up")
-      return this.getFallbackQuestion()
+    return {
+      question: followUp,
+      questionType: "followup",
+      category: "Follow-up",
+      expectedDuration: 2,
+      difficulty: this.context.difficulty as "Easy" | "Medium" | "Hard",
+      context: "Follow-up to explore your previous answer in more detail",
     }
   }
 
   async generateInterviewerComment(analysis: AnswerAnalysis): Promise<string> {
-    console.log("💬 Generating interviewer comment...")
+    const comments = [
+      "Thank you for that detailed response.",
+      "I appreciate the specific examples you provided.",
+      "That's an interesting approach to the problem.",
+      "Good, let's explore that further.",
+      "I can see you've thought about this carefully.",
+      "That demonstrates good problem-solving skills.",
+    ]
 
-    try {
-      const result = await generateText({
-        model: openai("gpt-4o-mini"),
-        messages: [
-          {
-            role: "system",
-            content: `You are a professional interviewer providing brief, encouraging feedback during an interview. Keep responses natural, professional, and 1-2 sentences max. Don't reveal the full analysis score.`,
-          },
-          {
-            role: "user",
-            content: `The candidate just gave an answer that scored ${analysis.score}/100. 
-Strengths: ${analysis.strengths.join(", ")}
-
-Provide a brief, encouraging interviewer response that acknowledges their answer naturally.`,
-          },
-        ],
-        temperature: 0.8,
-        maxTokens: 100,
-      })
-
-      const comment = result.text.trim()
-      console.log("✅ Generated interviewer comment:", comment)
-      return comment
-    } catch (error) {
-      console.error("❌ Error generating comment:", error)
-      return "Thank you for that response. Let's continue with the next question."
-    }
+    return comments[Math.floor(Math.random() * comments.length)]
   }
 
   updateContext(newAnswer: string, newScore: number, newQuestion: string) {
@@ -347,56 +401,6 @@ Provide a brief, encouraging interviewer response that acknowledges their answer
     this.context.previousScores.push(newScore)
     this.context.previousQuestions.push(newQuestion)
     this.context.currentQuestionNumber++
-  }
-
-  private getFallbackQuestion(): AIResponse {
-    console.log("🔄 Using fallback question for:", this.context.jobRole)
-
-    const fallbackQuestions = {
-      "Software Engineer":
-        "Can you walk me through how you would approach debugging a performance issue in a web application?",
-      "Senior Software Engineer": "Describe how you would design a scalable system to handle millions of users.",
-      "Product Manager": "How would you prioritize features when you have limited development resources?",
-      "Senior Product Manager":
-        "Tell me about a time you had to make a difficult product decision with incomplete data.",
-      "Data Scientist": "Explain how you would approach a machine learning problem from start to finish.",
-      "Senior Data Scientist": "How would you design an A/B testing framework for a large-scale application?",
-      "Marketing Manager": "How would you measure the success of a marketing campaign?",
-      "Sales Representative": "Tell me about a time when you had to overcome a difficult objection from a client.",
-      "Business Analyst": "How would you gather requirements for a new system implementation?",
-      "UX Designer": "Walk me through your design process for a new feature.",
-      "DevOps Engineer": "How would you implement a CI/CD pipeline for a microservices architecture?",
-      "Financial Analyst": "How would you analyze the financial impact of a new business initiative?",
-      "HR Manager": "How would you handle a conflict between team members?",
-    }
-
-    const question =
-      fallbackQuestions[this.context.jobRole] ||
-      "Tell me about a challenging project you worked on recently and how you approached it."
-
-    return {
-      question,
-      questionType: "main",
-      category: "General",
-      expectedDuration: 3,
-      difficulty: this.context.difficulty as "Easy" | "Medium" | "Hard",
-      context: `Tailored question for ${this.context.jobRole} at ${this.context.difficulty} level`,
-    }
-  }
-
-  private getFallbackAnalysis(): AnswerAnalysis {
-    return {
-      score: 75,
-      detailedFeedback:
-        "Your answer addresses the question and shows understanding of the topic. Consider adding more specific examples to strengthen your response.",
-      strengths: ["Clear communication", "Relevant response"],
-      weaknesses: ["Could use more specific examples", "Could elaborate on technical details"],
-      improvementSuggestions: ["Add concrete examples from your experience", "Provide more technical depth"],
-      idealAnswer:
-        "A stronger answer would include specific examples, metrics, and detailed explanations of your approach.",
-      nextQuestionDirection: "same",
-      followUpNeeded: false,
-    }
   }
 }
 
@@ -417,63 +421,53 @@ export async function generateInterviewSummary(
 
   try {
     const result = await generateText({
-      model: openai("gpt-4o-mini"),
+      model: google("gemini-1.5-flash"),
       messages: [
         {
           role: "system",
-          content: `You are an expert career coach providing a comprehensive interview performance summary. Analyze the entire interview and provide actionable insights.
+          content: `Provide comprehensive interview performance summary.
 
-You MUST respond with valid JSON in this exact format:
+IMPORTANT: Respond ONLY with valid JSON:
 {
-  "overallFeedback": "Comprehensive paragraph about overall performance",
-  "keyStrengths": ["Top 3-5 strengths across the interview"],
-  "criticalImprovements": ["Top 3-5 areas needing improvement"],
+  "overallFeedback": "Comprehensive feedback paragraph",
+  "keyStrengths": ["strength1", "strength2", "strength3"],
+  "criticalImprovements": ["improvement1", "improvement2", "improvement3"],
   "readinessScore": 85,
-  "nextSteps": ["Specific actionable steps for improvement"]
+  "nextSteps": ["step1", "step2", "step3"]
 }`,
         },
         {
           role: "user",
-          content: `Interview Summary Analysis:
-
-Job Role: ${jobRole}
-Difficulty: ${difficulty}
-Number of Questions: ${questions.length}
+          content: `Summarize this ${jobRole} interview performance:
 Average Score: ${analyses.reduce((acc, a) => acc + a.score, 0) / analyses.length}
-
-Questions and Scores:
-${questions.map((q, i) => `Q${i + 1}: ${q} (Score: ${analyses[i]?.score || 0})`).join("\n")}
-
-All Strengths: ${analyses.flatMap((a) => a.strengths).join(", ")}
-All Weaknesses: ${analyses.flatMap((a) => a.weaknesses).join(", ")}
-
-Provide a comprehensive summary with actionable insights.`,
+Questions: ${questions.length}
+Strengths: ${analyses.flatMap((a) => a.strengths).join(", ")}
+Weaknesses: ${analyses.flatMap((a) => a.weaknesses).join(", ")}`,
         },
       ],
       temperature: 0.3,
-      maxTokens: 800,
+      maxTokens: 500,
     })
 
     let cleanedText = result.text.trim()
     if (cleanedText.startsWith("```json")) {
       cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
-    } else if (cleanedText.startsWith("```")) {
-      cleanedText = cleanedText.replace(/^```\s*/, "").replace(/\s*```$/, "")
     }
 
-    const summary = JSON.parse(cleanedText)
-    console.log("✅ Generated interview summary:", summary)
-    return summary
+    return JSON.parse(cleanedText)
   } catch (error) {
-    console.error("❌ Error generating summary:", error)
+    console.error("❌ Summary generation failed:", error)
+
+    const avgScore = analyses.reduce((acc, a) => acc + a.score, 0) / analyses.length
+
     return {
-      overallFeedback: "You demonstrated good communication skills and relevant knowledge throughout the interview.",
+      overallFeedback: `You completed the ${jobRole} interview with an average score of ${avgScore.toFixed(0)}%. Your responses showed good understanding of the role requirements and demonstrated relevant experience.`,
       keyStrengths: ["Clear communication", "Relevant experience", "Professional demeanor"],
-      criticalImprovements: ["Add more specific examples", "Provide deeper technical details", "Practice storytelling"],
-      readinessScore: 75,
+      criticalImprovements: ["Add more specific examples", "Include quantifiable results", "Practice technical depth"],
+      readinessScore: Math.round(avgScore),
       nextSteps: [
-        "Practice with more technical questions",
-        "Prepare specific examples using STAR method",
+        "Practice more technical questions",
+        "Prepare STAR method examples",
         "Research company-specific scenarios",
       ],
     }

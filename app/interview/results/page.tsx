@@ -26,45 +26,84 @@ import { useAuth } from "@/contexts/AuthContext"
 interface InterviewResult {
   jobRole: string
   difficulty: string
-  questions: Array<{ text: string; category: string; difficulty: string }>
+  questions: Array<{ question?: string; text?: string; category: string; difficulty: string }>
   answers: string[]
   analyses: Array<{
     score: number
     strengths: string[]
-    improvements: string[]
-    feedback: string
-    suggestedAnswer: string
+    weaknesses?: string[]
+    improvements?: string[]
+    feedback?: string
+    detailedFeedback?: string
+    suggestedAnswer?: string
+    idealAnswer?: string
   }>
   timeElapsed: number
   completedAt: string
   overallScore: number
+  interviewSummary?: {
+    overallFeedback: string
+    keyStrengths: string[]
+    criticalImprovements: string[]
+    readinessScore: number
+    nextSteps: string[]
+  }
 }
 
 export default function InterviewResultsPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
   const [interviewData, setInterviewData] = useState<InterviewResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  // Validate interview data when loading from localStorage
   useEffect(() => {
     try {
       const savedInterview = localStorage.getItem("lastInterview")
       if (savedInterview) {
         const parsedData = JSON.parse(savedInterview)
 
-        // Ensure all required properties exist
-        if (!parsedData.questions || !parsedData.answers || !parsedData.analyses) {
-          throw new Error("Invalid interview data structure")
+        // Validate and normalize the data structure
+        const normalizedData: InterviewResult = {
+          jobRole: parsedData.jobRole || "Unknown Role",
+          difficulty: parsedData.difficulty || "Unknown",
+          questions: (parsedData.questions || []).map((q: any) => ({
+            question: q.question || q.text || "Question not available",
+            text: q.question || q.text || "Question not available",
+            category: q.category || "General",
+            difficulty: q.difficulty || parsedData.difficulty || "Unknown",
+          })),
+          answers: parsedData.answers || [],
+          analyses: (parsedData.analyses || []).map((a: any) => ({
+            score: a.score || 0,
+            strengths: a.strengths || [],
+            weaknesses: a.weaknesses || a.improvements || [],
+            improvements: a.improvements || a.weaknesses || [],
+            feedback: a.feedback || a.detailedFeedback || "No feedback available",
+            detailedFeedback: a.detailedFeedback || a.feedback || "No feedback available",
+            suggestedAnswer: a.suggestedAnswer || a.idealAnswer || "No suggested answer available",
+            idealAnswer: a.idealAnswer || a.suggestedAnswer || "No ideal answer available",
+          })),
+          timeElapsed: parsedData.timeElapsed || 0,
+          completedAt: parsedData.completedAt || new Date().toISOString(),
+          overallScore: parsedData.overallScore || 0,
+          interviewSummary: parsedData.interviewSummary || {
+            overallFeedback: "Interview completed successfully.",
+            keyStrengths: ["Communication", "Relevant experience"],
+            criticalImprovements: ["Add more examples", "Provide more detail"],
+            readinessScore: parsedData.overallScore || 75,
+            nextSteps: ["Practice more questions", "Prepare specific examples"],
+          },
         }
 
-        setInterviewData(parsedData)
+        setInterviewData(normalizedData)
       } else {
-        router.push("/interview")
+        setError("No interview data found")
+        setTimeout(() => router.push("/interview"), 2000)
       }
     } catch (error) {
       console.error("Error loading interview data:", error)
-      alert("There was an error loading your interview results. Redirecting to dashboard.")
-      router.push("/dashboard")
+      setError("Error loading interview results")
+      setTimeout(() => router.push("/dashboard"), 3000)
     }
   }, [router])
 
@@ -107,13 +146,26 @@ export default function InterviewResultsPage() {
     )
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Results</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button onClick={() => router.push("/dashboard")}>Return to Dashboard</Button>
+        </div>
+      </div>
+    )
+  }
+
   if (!user || !interviewData) {
     return null
   }
 
   const scoreBadge = getScoreBadge(interviewData.overallScore)
   const allStrengths = interviewData.analyses?.flatMap((a) => a.strengths || []) || []
-  const allImprovements = interviewData.analyses?.flatMap((a) => a.improvements || []) || []
+  const allImprovements = interviewData.analyses?.flatMap((a) => a.improvements || a.weaknesses || []) || []
   const uniqueStrengths = [...new Set(allStrengths)]
   const uniqueImprovements = [...new Set(allImprovements)]
 
@@ -132,7 +184,7 @@ export default function InterviewResultsPage() {
                 <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                   <Target className="w-5 h-5 text-white" />
                 </div>
-                <span className="text-xl font-bold text-gray-900">AI Interview Results</span>
+                <span className="text-xl font-bold text-gray-900">Interview Results</span>
               </div>
             </div>
 
@@ -158,9 +210,9 @@ export default function InterviewResultsPage() {
               <div className="flex items-center space-x-3">
                 <CheckCircle className="w-8 h-8 text-green-600" />
                 <div>
-                  <h2 className="text-xl font-semibold text-green-900">AI Interview Analysis Complete!</h2>
+                  <h2 className="text-xl font-semibold text-green-900">Interview Analysis Complete!</h2>
                   <p className="text-green-700">
-                    Our AI has analyzed your responses and provided detailed feedback to help you improve.
+                    Your interview has been analyzed and detailed feedback is ready for review.
                   </p>
                 </div>
               </div>
@@ -213,14 +265,81 @@ export default function InterviewResultsPage() {
               </CardContent>
             </Card>
 
+            {/* Interview Summary */}
+            {interviewData.interviewSummary && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Bot className="w-5 h-5 text-blue-600" />
+                    <span>Interview Summary</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-6">
+                    <div className="bg-blue-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-blue-900 mb-2">Overall Feedback</h4>
+                      <p className="text-blue-800">{interviewData.interviewSummary.overallFeedback}</p>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="bg-green-50 p-4 rounded-lg">
+                        <h4 className="font-semibold text-green-900 mb-3 flex items-center">
+                          <CheckCircle className="w-4 h-4 mr-2" />
+                          Key Strengths
+                        </h4>
+                        <ul className="space-y-1">
+                          {interviewData.interviewSummary.keyStrengths.map((strength, index) => (
+                            <li key={index} className="text-green-800 text-sm flex items-start">
+                              <span className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                              {strength}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div className="bg-orange-50 p-4 rounded-lg">
+                        <h4 className="font-semibold text-orange-900 mb-3 flex items-center">
+                          <TrendingUp className="w-4 h-4 mr-2" />
+                          Areas for Improvement
+                        </h4>
+                        <ul className="space-y-1">
+                          {interviewData.interviewSummary.criticalImprovements.map((improvement, index) => (
+                            <li key={index} className="text-orange-800 text-sm flex items-start">
+                              <span className="w-1.5 h-1.5 bg-orange-600 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                              {improvement}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="bg-purple-50 p-4 rounded-lg">
+                      <h4 className="font-semibold text-purple-900 mb-3 flex items-center">
+                        <Lightbulb className="w-4 h-4 mr-2" />
+                        Next Steps
+                      </h4>
+                      <ul className="space-y-1">
+                        {interviewData.interviewSummary.nextSteps.map((step, index) => (
+                          <li key={index} className="text-purple-800 text-sm flex items-start">
+                            <span className="w-1.5 h-1.5 bg-purple-600 rounded-full mt-2 mr-2 flex-shrink-0"></span>
+                            {step}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Detailed Analysis */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
                   <Bot className="w-5 h-5 text-blue-600" />
-                  <span>AI Analysis & Feedback</span>
+                  <span>Question-by-Question Analysis</span>
                 </CardTitle>
-                <CardDescription>Detailed question-by-question analysis with AI-powered insights</CardDescription>
+                <CardDescription>Detailed feedback for each interview question</CardDescription>
               </CardHeader>
               <CardContent>
                 <Tabs defaultValue="questions" className="w-full">
@@ -251,7 +370,7 @@ export default function InterviewResultsPage() {
                               <Bot className="w-5 h-5 text-blue-600 mt-0.5" />
                               <div>
                                 <p className="font-medium text-blue-900 mb-1">Question:</p>
-                                <p className="text-blue-800">{question.text}</p>
+                                <p className="text-blue-800">{question.question || question.text}</p>
                               </div>
                             </div>
                           </div>
@@ -272,7 +391,7 @@ export default function InterviewResultsPage() {
                                 <div className="flex items-start space-x-3">
                                   <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
                                   <div>
-                                    <p className="font-medium text-green-900 mb-2">AI Feedback:</p>
+                                    <p className="font-medium text-green-900 mb-2">Feedback:</p>
                                     <p className="text-green-800 mb-3">{interviewData.analyses[index].feedback}</p>
                                     {interviewData.analyses[index].strengths.length > 0 && (
                                       <div>
@@ -298,21 +417,22 @@ export default function InterviewResultsPage() {
                                 </div>
                               </div>
 
-                              {interviewData.analyses[index].improvements.length > 0 && (
-                                <div className="bg-orange-50 p-4 rounded-lg">
-                                  <div className="flex items-start space-x-3">
-                                    <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5" />
-                                    <div>
-                                      <p className="font-medium text-orange-900 mb-1">Areas for Improvement:</p>
-                                      <ul className="list-disc list-inside text-orange-800 text-sm">
-                                        {interviewData.analyses[index].improvements.map((improvement, i) => (
-                                          <li key={i}>{improvement}</li>
-                                        ))}
-                                      </ul>
+                              {interviewData.analyses[index].improvements &&
+                                interviewData.analyses[index].improvements.length > 0 && (
+                                  <div className="bg-orange-50 p-4 rounded-lg">
+                                    <div className="flex items-start space-x-3">
+                                      <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5" />
+                                      <div>
+                                        <p className="font-medium text-orange-900 mb-1">Areas for Improvement:</p>
+                                        <ul className="list-disc list-inside text-orange-800 text-sm">
+                                          {interviewData.analyses[index].improvements.map((improvement, i) => (
+                                            <li key={i}>{improvement}</li>
+                                          ))}
+                                        </ul>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
                             </>
                           )}
                         </div>
