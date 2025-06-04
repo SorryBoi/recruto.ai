@@ -11,7 +11,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   Target,
   ArrowLeft,
-  Play,
   Mic,
   MicOff,
   Clock,
@@ -21,25 +20,28 @@ import {
   Bot,
   User,
   Loader2,
+  Brain,
+  Zap,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import {
-  generateInterviewQuestions,
-  analyzeAnswer,
-  generateInterviewerResponse,
-  type InterviewQuestion,
-  type InterviewAnalysis,
-} from "@/lib/ai-interview"
+  AIInterviewer,
+  type InterviewContext,
+  type AIResponse,
+  type AnswerAnalysis,
+  generateInterviewSummary,
+} from "@/lib/ai-interviewer"
 
 interface InterviewData {
   jobRole: string
   difficulty: string
-  questions: InterviewQuestion[]
+  questions: AIResponse[]
   answers: string[]
-  analyses: InterviewAnalysis[]
+  analyses: AnswerAnalysis[]
   timeElapsed: number
   completedAt: string
   overallScore: number
+  interviewSummary?: any
 }
 
 export default function InterviewPage() {
@@ -52,13 +54,16 @@ export default function InterviewPage() {
   const [interviewStarted, setInterviewStarted] = useState(false)
   const [selectedJobRole, setSelectedJobRole] = useState("")
   const [selectedDifficulty, setSelectedDifficulty] = useState("")
-  const [questions, setQuestions] = useState<InterviewQuestion[]>([])
+  const [selectedCompanyType, setSelectedCompanyType] = useState("")
+  const [questions, setQuestions] = useState<AIResponse[]>([])
   const [answers, setAnswers] = useState<string[]>([])
-  const [analyses, setAnalyses] = useState<InterviewAnalysis[]>([])
-  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false)
+  const [analyses, setAnalyses] = useState<AnswerAnalysis[]>([])
+  const [isGeneratingQuestion, setIsGeneratingQuestion] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [interviewerResponse, setInterviewerResponse] = useState("")
-  const [showInterviewerResponse, setShowInterviewerResponse] = useState(false)
+  const [interviewerComment, setInterviewerComment] = useState("")
+  const [showInterviewerComment, setShowInterviewerComment] = useState(false)
+  const [aiInterviewer, setAiInterviewer] = useState<AIInterviewer | null>(null)
+  const [isThinking, setIsThinking] = useState(false)
 
   useEffect(() => {
     if (!loading && !user) {
@@ -88,59 +93,101 @@ export default function InterviewPage() {
       return
     }
 
-    setIsGeneratingQuestions(true)
+    setIsGeneratingQuestion(true)
     try {
-      const generatedQuestions = await generateInterviewQuestions(selectedJobRole, selectedDifficulty, 5)
-      setQuestions(generatedQuestions)
+      // Initialize AI Interviewer
+      const context: InterviewContext = {
+        jobRole: selectedJobRole,
+        difficulty: selectedDifficulty,
+        currentQuestionNumber: 1,
+        previousQuestions: [],
+        previousAnswers: [],
+        previousScores: [],
+        interviewStyle: "mixed",
+        companyType: selectedCompanyType,
+      }
+
+      const interviewer = new AIInterviewer(context)
+      setAiInterviewer(interviewer)
+
+      // Generate first question
+      const firstQuestion = await interviewer.generateNextQuestion()
+      setQuestions([firstQuestion])
       setInterviewStarted(true)
       setTimeElapsed(0)
     } catch (error) {
       console.error("Error starting interview:", error)
-      alert("Failed to generate questions. Please try again.")
+      alert("Failed to start AI interview. Please try again.")
     } finally {
-      setIsGeneratingQuestions(false)
+      setIsGeneratingQuestion(false)
     }
   }
 
-  const handleNextQuestion = async () => {
-    if (!answer.trim()) {
+  const handleSubmitAnswer = async () => {
+    if (!answer.trim() || !aiInterviewer) {
       alert("Please provide an answer before proceeding.")
       return
     }
 
     setIsAnalyzing(true)
-    setShowInterviewerResponse(false)
+    setShowInterviewerComment(false)
+    setIsThinking(true)
 
     try {
       // Analyze the current answer
-      const analysis = await analyzeAnswer(questions[currentQuestion].text, answer, selectedJobRole, selectedDifficulty)
+      const analysis = await aiInterviewer.analyzeAnswer(questions[currentQuestion].question, answer)
 
-      // Generate interviewer response
-      const response = await generateInterviewerResponse(questions[currentQuestion].text, answer, analysis)
+      // Generate interviewer comment
+      const comment = await aiInterviewer.generateInterviewerComment(analysis)
+
+      // Update context
+      aiInterviewer.updateContext(answer, analysis.score, questions[currentQuestion].question)
 
       setAnswers([...answers, answer])
       setAnalyses([...analyses, analysis])
-      setInterviewerResponse(response)
-      setShowInterviewerResponse(true)
-      setAnswer("")
+      setInterviewerComment(comment)
+      setShowInterviewerComment(true)
+      setIsThinking(false)
 
-      // Auto-advance after showing response
-      setTimeout(() => {
-        if (currentQuestion < questions.length - 1) {
+      // Determine next action
+      setTimeout(async () => {
+        if (currentQuestion < 4) {
+          // Generate next question or follow-up
+          setIsGeneratingQuestion(true)
+          let nextQuestion: AIResponse
+
+          if (analysis.followUpNeeded && Math.random() > 0.3) {
+            // 70% chance to ask follow-up if needed
+            nextQuestion = await aiInterviewer.generateFollowUpQuestion(
+              questions[currentQuestion].question,
+              answer,
+              analysis,
+            )
+          } else {
+            // Generate new question
+            nextQuestion = await aiInterviewer.generateNextQuestion()
+          }
+
+          setQuestions([...questions, nextQuestion])
           setCurrentQuestion(currentQuestion + 1)
-          setShowInterviewerResponse(false)
+          setAnswer("")
+          setShowInterviewerComment(false)
+          setIsGeneratingQuestion(false)
         } else {
+          // Interview completed
           handleCompleteInterview()
         }
-      }, 3000)
+      }, 2500)
     } catch (error) {
-      console.error("Error analyzing answer:", error)
+      console.error("Error processing answer:", error)
+      setIsThinking(false)
       // Continue without analysis if there's an error
       setAnswers([...answers, answer])
       setAnswer("")
 
-      if (currentQuestion < questions.length - 1) {
+      if (currentQuestion < 4) {
         setCurrentQuestion(currentQuestion + 1)
+        setShowInterviewerComment(false)
       } else {
         handleCompleteInterview()
       }
@@ -149,7 +196,7 @@ export default function InterviewPage() {
     }
   }
 
-  const handleCompleteInterview = () => {
+  const handleCompleteInterview = async () => {
     const finalAnswers = [...answers, answer]
     const finalAnalyses = [...analyses]
 
@@ -158,6 +205,20 @@ export default function InterviewPage() {
       finalAnalyses.length > 0
         ? Math.round(finalAnalyses.reduce((acc, analysis) => acc + analysis.score, 0) / finalAnalyses.length)
         : 75
+
+    // Generate comprehensive interview summary
+    let interviewSummary
+    try {
+      interviewSummary = await generateInterviewSummary(
+        selectedJobRole,
+        selectedDifficulty,
+        questions.map((q) => q.question),
+        finalAnswers,
+        finalAnalyses,
+      )
+    } catch (error) {
+      console.error("Error generating summary:", error)
+    }
 
     const interviewData: InterviewData = {
       jobRole: selectedJobRole,
@@ -168,6 +229,7 @@ export default function InterviewPage() {
       timeElapsed,
       completedAt: new Date().toISOString(),
       overallScore,
+      interviewSummary,
     }
 
     // Save to localStorage and update user's interview history
@@ -216,7 +278,11 @@ export default function InterviewPage() {
                 <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
                   <Target className="w-5 h-5 text-white" />
                 </div>
-                <span className="text-xl font-bold text-gray-900">AI Mock Interview</span>
+                <span className="text-xl font-bold text-gray-900">AI Interviewer</span>
+                <Badge className="bg-gradient-to-r from-purple-500 to-blue-500 text-white">
+                  <Brain className="w-3 h-3 mr-1" />
+                  Powered by GPT-4
+                </Badge>
               </div>
             </div>
 
@@ -226,9 +292,7 @@ export default function InterviewPage() {
                   <Clock className="w-3 h-3" />
                   <span>{formatTime(timeElapsed)}</span>
                 </Badge>
-                <Badge className="bg-blue-100 text-blue-800">
-                  Question {currentQuestion + 1} of {questions.length}
-                </Badge>
+                <Badge className="bg-blue-100 text-blue-800">Question {currentQuestion + 1} of 5</Badge>
               </div>
             )}
           </div>
@@ -242,11 +306,12 @@ export default function InterviewPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center space-x-2">
-                  <Bot className="w-5 h-5 text-blue-600" />
-                  <span>Setup Your AI Mock Interview</span>
+                  <Brain className="w-5 h-5 text-purple-600" />
+                  <span>AI Interviewer Setup</span>
                 </CardTitle>
                 <CardDescription>
-                  Our AI will generate personalized questions and provide real-time feedback
+                  Configure your personalized AI interview experience. Our AI will adapt questions based on your
+                  responses and provide real-time feedback.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -254,12 +319,15 @@ export default function InterviewPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Job Role</label>
                   <Select value={selectedJobRole} onValueChange={setSelectedJobRole}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select a job role" />
+                      <SelectValue placeholder="Select your target job role" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Software Engineer">Software Engineer</SelectItem>
+                      <SelectItem value="Senior Software Engineer">Senior Software Engineer</SelectItem>
                       <SelectItem value="Product Manager">Product Manager</SelectItem>
+                      <SelectItem value="Senior Product Manager">Senior Product Manager</SelectItem>
                       <SelectItem value="Data Scientist">Data Scientist</SelectItem>
+                      <SelectItem value="Senior Data Scientist">Senior Data Scientist</SelectItem>
                       <SelectItem value="Marketing Manager">Marketing Manager</SelectItem>
                       <SelectItem value="Sales Representative">Sales Representative</SelectItem>
                       <SelectItem value="Business Analyst">Business Analyst</SelectItem>
@@ -285,33 +353,51 @@ export default function InterviewPage() {
                   </Select>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Company Type (Optional)</label>
+                  <Select value={selectedCompanyType} onValueChange={setSelectedCompanyType}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select company type for targeted questions" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Startup">Startup</SelectItem>
+                      <SelectItem value="Big Tech">Big Tech (FAANG)</SelectItem>
+                      <SelectItem value="Enterprise">Enterprise</SelectItem>
+                      <SelectItem value="Consulting">Consulting</SelectItem>
+                      <SelectItem value="Finance">Finance</SelectItem>
+                      <SelectItem value="Healthcare">Healthcare</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <Alert>
-                  <Bot className="h-4 w-4" />
+                  <Zap className="h-4 w-4" />
                   <AlertDescription>
-                    <strong>AI-Powered Features:</strong>
+                    <strong>Advanced AI Features:</strong>
                     <ul className="mt-2 space-y-1 text-sm">
-                      <li>• Personalized questions based on your role and experience</li>
-                      <li>• Real-time answer analysis and scoring</li>
-                      <li>• Intelligent follow-up questions</li>
-                      <li>• Detailed feedback and improvement suggestions</li>
-                      <li>• Suggested optimal answers for each question</li>
+                      <li>• Dynamic question generation based on your responses</li>
+                      <li>• Adaptive difficulty that adjusts to your performance</li>
+                      <li>• Intelligent follow-up questions for deeper assessment</li>
+                      <li>• Real-time analysis with detailed improvement suggestions</li>
+                      <li>• Conversational interview experience with natural flow</li>
+                      <li>• Comprehensive performance summary and readiness score</li>
                     </ul>
                   </AlertDescription>
                 </Alert>
 
                 <Button
                   onClick={handleStartInterview}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                  disabled={!selectedJobRole || !selectedDifficulty || isGeneratingQuestions}
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white"
+                  disabled={!selectedJobRole || !selectedDifficulty || isGeneratingQuestion}
                 >
-                  {isGeneratingQuestions ? (
+                  {isGeneratingQuestion ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Generating Questions...
+                      AI is preparing your interview...
                     </>
                   ) : (
                     <>
-                      <Play className="w-4 h-4 mr-2" />
+                      <Brain className="w-4 h-4 mr-2" />
                       Start AI Interview
                     </>
                   )}
@@ -322,7 +408,25 @@ export default function InterviewPage() {
         ) : (
           // Interview in Progress
           <div className="max-w-4xl mx-auto">
-            {showInterviewerResponse && (
+            {/* AI Thinking Indicator */}
+            {isThinking && (
+              <Card className="mb-6 border-purple-200 bg-purple-50">
+                <CardContent className="pt-6">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center">
+                      <Brain className="w-4 h-4 text-white animate-pulse" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-purple-900">AI is analyzing your response...</p>
+                      <p className="text-purple-700 text-sm">Evaluating content, structure, and relevance</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Interviewer Comment */}
+            {showInterviewerComment && !isThinking && (
               <Card className="mb-6 border-blue-200 bg-blue-50">
                 <CardContent className="pt-6">
                   <div className="flex items-start space-x-3">
@@ -331,7 +435,24 @@ export default function InterviewPage() {
                     </div>
                     <div>
                       <p className="font-medium text-blue-900">AI Interviewer</p>
-                      <p className="text-blue-800 mt-1">{interviewerResponse}</p>
+                      <p className="text-blue-800 mt-1">{interviewerComment}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Question Generation Indicator */}
+            {isGeneratingQuestion && (
+              <Card className="mb-6 border-green-200 bg-green-50">
+                <CardContent className="pt-6">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center">
+                      <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-green-900">AI is preparing your next question...</p>
+                      <p className="text-green-700 text-sm">Adapting based on your previous responses</p>
                     </div>
                   </div>
                 </CardContent>
@@ -348,19 +469,25 @@ export default function InterviewPage() {
                         <MessageSquare className="w-5 h-5 text-blue-600" />
                         <span>Question {currentQuestion + 1}</span>
                       </CardTitle>
-                      <Badge
-                        variant={
-                          questions[currentQuestion]?.difficulty === "Easy"
-                            ? "secondary"
-                            : questions[currentQuestion]?.difficulty === "Medium"
-                              ? "default"
-                              : "destructive"
-                        }
-                      >
-                        {questions[currentQuestion]?.difficulty}
-                      </Badge>
+                      <div className="flex items-center space-x-2">
+                        <Badge
+                          variant={
+                            questions[currentQuestion]?.difficulty === "Easy"
+                              ? "secondary"
+                              : questions[currentQuestion]?.difficulty === "Medium"
+                                ? "default"
+                                : "destructive"
+                          }
+                        >
+                          {questions[currentQuestion]?.difficulty}
+                        </Badge>
+                        <Badge variant="outline">{questions[currentQuestion]?.questionType}</Badge>
+                      </div>
                     </div>
-                    <CardDescription>{questions[currentQuestion]?.category}</CardDescription>
+                    <CardDescription>
+                      {questions[currentQuestion]?.category} • Expected duration:{" "}
+                      {questions[currentQuestion]?.expectedDuration} min
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="bg-gray-50 p-4 rounded-lg mb-6">
@@ -370,7 +497,12 @@ export default function InterviewPage() {
                         </div>
                         <div>
                           <p className="font-medium text-gray-900 mb-2">AI Interviewer asks:</p>
-                          <p className="text-lg text-gray-800">{questions[currentQuestion]?.text}</p>
+                          <p className="text-lg text-gray-800">{questions[currentQuestion]?.question}</p>
+                          {questions[currentQuestion]?.context && (
+                            <p className="text-sm text-gray-600 mt-2 italic">
+                              Context: {questions[currentQuestion].context}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -397,28 +529,30 @@ export default function InterviewPage() {
                         onChange={(e) => setAnswer(e.target.value)}
                         placeholder="Type your answer here or use voice recording..."
                         className="min-h-[150px]"
-                        disabled={isAnalyzing || showInterviewerResponse}
+                        disabled={isAnalyzing || showInterviewerComment || isGeneratingQuestion}
                       />
 
                       <div className="flex justify-between">
                         <Button
                           variant="outline"
                           onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
-                          disabled={currentQuestion === 0 || isAnalyzing || showInterviewerResponse}
+                          disabled={
+                            currentQuestion === 0 || isAnalyzing || showInterviewerComment || isGeneratingQuestion
+                          }
                         >
                           Previous
                         </Button>
                         <Button
-                          onClick={handleNextQuestion}
+                          onClick={handleSubmitAnswer}
                           className="bg-blue-600 hover:bg-blue-700 text-white"
-                          disabled={!answer.trim() || isAnalyzing || showInterviewerResponse}
+                          disabled={!answer.trim() || isAnalyzing || showInterviewerComment || isGeneratingQuestion}
                         >
                           {isAnalyzing ? (
                             <>
                               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Analyzing...
+                              AI Analyzing...
                             </>
-                          ) : currentQuestion === questions.length - 1 ? (
+                          ) : currentQuestion === 4 ? (
                             <>
                               <CheckCircle className="w-4 h-4 mr-2" />
                               Complete Interview
@@ -446,20 +580,21 @@ export default function InterviewPage() {
                     <ul className="text-sm space-y-2">
                       <li>• Use the STAR method (Situation, Task, Action, Result)</li>
                       <li>• Provide specific examples from your experience</li>
-                      <li>• Keep answers concise but comprehensive</li>
+                      <li>• Be concise but comprehensive</li>
                       <li>• Show enthusiasm and confidence</li>
                       <li>• Ask clarifying questions if needed</li>
+                      <li>• The AI adapts to your responses</li>
                     </ul>
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Progress</CardTitle>
+                    <CardTitle>Interview Progress</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
-                      {questions.map((_, index) => (
+                      {Array.from({ length: 5 }, (_, index) => (
                         <div
                           key={index}
                           className={`flex items-center space-x-2 p-2 rounded ${
@@ -481,7 +616,9 @@ export default function InterviewPage() {
                           >
                             {index < currentQuestion ? "✓" : index + 1}
                           </div>
-                          <span className="text-sm">Question {index + 1}</span>
+                          <span className="text-sm">
+                            {questions[index] ? questions[index].category : `Question ${index + 1}`}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -490,7 +627,7 @@ export default function InterviewPage() {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Interview Info</CardTitle>
+                    <CardTitle>AI Interview Info</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2 text-sm">
                     <div>
@@ -501,10 +638,24 @@ export default function InterviewPage() {
                       <span className="text-gray-600">Level:</span>
                       <span className="ml-2 font-medium">{selectedDifficulty}</span>
                     </div>
+                    {selectedCompanyType && (
+                      <div>
+                        <span className="text-gray-600">Company:</span>
+                        <span className="ml-2 font-medium">{selectedCompanyType}</span>
+                      </div>
+                    )}
                     <div>
                       <span className="text-gray-600">Duration:</span>
                       <span className="ml-2 font-medium">{formatTime(timeElapsed)}</span>
                     </div>
+                    {analyses.length > 0 && (
+                      <div>
+                        <span className="text-gray-600">Avg Score:</span>
+                        <span className="ml-2 font-medium">
+                          {Math.round(analyses.reduce((acc, a) => acc + a.score, 0) / analyses.length)}%
+                        </span>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </div>
