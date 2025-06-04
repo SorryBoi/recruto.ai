@@ -105,6 +105,9 @@ export default function InterviewPage() {
     addDebugInfo("Starting AI interview setup...")
 
     try {
+      // Generate unique session ID
+      const sessionId = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
       // Initialize AI Interviewer
       const context: InterviewContext = {
         jobRole: selectedJobRole,
@@ -115,22 +118,31 @@ export default function InterviewPage() {
         previousScores: [],
         interviewStyle: "mixed",
         companyType: selectedCompanyType,
+        sessionId: sessionId,
       }
 
       addDebugInfo(`Creating AI interviewer for ${selectedJobRole}`)
       const interviewer = new AIInterviewer(context)
       setAiInterviewer(interviewer)
 
-      // Generate first question
+      // Generate first question with timeout
       addDebugInfo("Generating first AI question...")
-      const firstQuestion = await interviewer.generateNextQuestion()
 
-      if (firstQuestion.context.includes("Tailored question")) {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("AI request timeout")), 15000),
+      )
+
+      const questionPromise = interviewer.generateNextQuestion()
+
+      const firstQuestion = await Promise.race([questionPromise, timeoutPromise])
+
+      // Check if AI is working properly
+      if (firstQuestion.context && firstQuestion.context.includes("Advanced")) {
         addDebugInfo("✅ AI question generated successfully")
         setAiStatus("ready")
       } else {
-        addDebugInfo("⚠️ Using fallback question - AI may not be working")
-        setAiStatus("error")
+        addDebugInfo("⚠️ Using fallback question - AI may have issues")
+        setAiStatus("ready") // Still proceed but note the issue
       }
 
       setQuestions([firstQuestion])
@@ -139,8 +151,40 @@ export default function InterviewPage() {
     } catch (error) {
       console.error("Error starting interview:", error)
       addDebugInfo(`❌ Error: ${error.message}`)
+
+      // Set error status but don't fail completely
       setAiStatus("error")
-      alert("Failed to start AI interview. Please try again.")
+
+      // Show user-friendly error message
+      alert(`AI service is experiencing issues: ${error.message}. The interview will use backup questions.`)
+
+      // Continue with fallback - don't block the interview
+      try {
+        const context: InterviewContext = {
+          jobRole: selectedJobRole,
+          difficulty: selectedDifficulty,
+          currentQuestionNumber: 1,
+          previousQuestions: [],
+          previousAnswers: [],
+          previousScores: [],
+          interviewStyle: "mixed",
+          companyType: selectedCompanyType,
+          sessionId: `fallback_${Date.now()}`,
+        }
+
+        const interviewer = new AIInterviewer(context)
+        setAiInterviewer(interviewer)
+
+        // Force use of local generator
+        const fallbackQuestion = interviewer.advancedGenerator.generateQuestion(context)
+        setQuestions([fallbackQuestion])
+        setInterviewStarted(true)
+        setTimeElapsed(0)
+        addDebugInfo("✅ Using local question generator")
+      } catch (fallbackError) {
+        console.error("Fallback also failed:", fallbackError)
+        alert("Unable to start interview. Please try again.")
+      }
     } finally {
       setIsGeneratingQuestion(false)
     }
@@ -159,9 +203,14 @@ export default function InterviewPage() {
     addDebugInfo("Analyzing answer with AI...")
 
     try {
-      // Analyze the current answer
-      const analysis = await aiInterviewer.analyzeAnswer(questions[currentQuestion].question, answer)
+      // Analyze the current answer with timeout
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Analysis timeout")), 10000))
+
+      const analysisPromise = aiInterviewer.analyzeAnswer(questions[currentQuestion].question, answer)
+      const analysis = await Promise.race([analysisPromise, timeoutPromise])
+
       addDebugInfo(`AI analysis complete - Score: ${analysis.score}`)
+      setAiStatus("ready")
 
       // Generate interviewer comment
       addDebugInfo("Generating AI interviewer comment...")
@@ -216,16 +265,29 @@ export default function InterviewPage() {
     } catch (error) {
       console.error("Error processing answer:", error)
       addDebugInfo(`❌ Error processing answer: ${error.message}`)
-      setIsThinking(false)
       setAiStatus("error")
 
-      // Continue without analysis if there's an error
-      setAnswers([...answers, answer])
-      setAnswer("")
+      // Use fallback analysis
+      const fallbackAnalysis = {
+        score: 75,
+        detailedFeedback: "Unable to get AI analysis. Your answer was recorded.",
+        strengths: ["Provided a response"],
+        weaknesses: ["AI analysis unavailable"],
+        improvementSuggestions: ["Try again with AI working"],
+        idealAnswer: "AI analysis temporarily unavailable",
+        nextQuestionDirection: "same" as const,
+        followUpNeeded: false,
+        realityCheck: "Continue with the interview",
+        industryStandard: "Standard response expected",
+      }
 
+      setAnswers([...answers, answer])
+      setAnalyses([...analyses, fallbackAnalysis])
+
+      // Continue with interview
       if (currentQuestion < 4) {
         setCurrentQuestion(currentQuestion + 1)
-        setShowInterviewerComment(false)
+        setAnswer("")
       } else {
         handleCompleteInterview()
       }

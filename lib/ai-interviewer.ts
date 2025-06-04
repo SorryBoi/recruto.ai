@@ -1,5 +1,5 @@
 import { generateText } from "ai"
-import { google } from "@ai-sdk/openai"
+import { google } from "@ai-sdk/google"
 
 export interface InterviewContext {
   jobRole: string
@@ -500,53 +500,84 @@ export class AIInterviewer {
     const actualDifficulty = this.getHigherDifficulty(this.context.difficulty)
     const prompt = this.generateAdvancedQuestionPrompt(actualDifficulty)
 
-    const result = await generateText({
-      model: google("gemini-1.5-flash"),
-      messages: [
-        {
-          role: "system",
-          content: `You are a senior interviewer known for asking challenging, real-world questions that test candidates beyond their comfort zone.
+    try {
+      const result = await generateText({
+        model: google("gemini-1.5-flash-latest"), // Use latest version
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert interviewer for ${this.context.jobRole} positions. Generate realistic interview questions.
 
-IMPORTANT GUIDELINES:
-- Generate questions ONE LEVEL HARDER than requested (${this.context.difficulty} → ${actualDifficulty})
-- Make questions realistic but challenging - like top-tier companies ask
-- Avoid questions already asked: ${this.context.previousQuestions.join(", ")}
-- Focus on practical, real-world scenarios
-- Test depth of knowledge, not just surface understanding
-
-Respond ONLY with valid JSON:
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
 {
-  "question": "Your challenging question here",
-  "questionType": "main",
-  "category": "Technical",
-  "expectedDuration": 4,
-  "difficulty": "${this.context.difficulty}",
-  "actualDifficulty": "${actualDifficulty}",
-  "context": "Why this advanced question tests real capability"
-}`,
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      temperature: 0.9, // Higher creativity for varied questions
-      maxTokens: 500,
-    })
+"question": "Your interview question here",
+"questionType": "main",
+"category": "Technical",
+"expectedDuration": 3,
+"difficulty": "${this.context.difficulty}",
+"actualDifficulty": "${actualDifficulty}",
+"context": "Brief explanation"
+}
 
-    let cleanedText = result.text.trim()
-    if (cleanedText.startsWith("```json")) {
-      cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
-    } else if (cleanedText.startsWith("```")) {
-      cleanedText = cleanedText.replace(/^```\s*/, "").replace(/\s*```$/, "")
+Guidelines:
+- ${actualDifficulty} level questions for ${this.context.jobRole}
+- Make questions realistic and commonly asked
+- Avoid repeating previous questions: ${this.context.previousQuestions.slice(-3).join(", ")}`,
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        maxTokens: 400,
+      })
+
+      console.log("🎯 AI Response:", result.text)
+
+      // Clean and parse response with better error handling
+      let cleanedText = result.text.trim()
+
+      // Remove markdown formatting
+      if (cleanedText.startsWith("```json")) {
+        cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
+      } else if (cleanedText.startsWith("```")) {
+        cleanedText = cleanedText.replace(/^```\s*/, "").replace(/\s*```$/, "")
+      }
+
+      // Try to parse JSON
+      let aiResponse
+      try {
+        aiResponse = JSON.parse(cleanedText)
+      } catch (parseError) {
+        console.error("JSON Parse Error:", parseError)
+        console.error("Raw response:", cleanedText)
+        throw new Error("Invalid JSON response from AI")
+      }
+
+      // Validate required fields
+      if (!aiResponse.question || !aiResponse.category) {
+        console.error("Missing required fields:", aiResponse)
+        throw new Error("Invalid AI response structure - missing required fields")
+      }
+
+      // Ensure all required fields are present
+      const validatedResponse = {
+        question: aiResponse.question,
+        questionType: aiResponse.questionType || "main",
+        category: aiResponse.category,
+        expectedDuration: aiResponse.expectedDuration || 3,
+        difficulty: this.context.difficulty as "Easy" | "Medium" | "Hard",
+        actualDifficulty: aiResponse.actualDifficulty || actualDifficulty,
+        context: aiResponse.context || `Generated question for ${this.context.jobRole}`,
+      }
+
+      console.log("✅ AI question generated successfully")
+      return validatedResponse
+    } catch (error) {
+      console.error("❌ AI generation error:", error)
+      throw error
     }
-
-    const aiResponse = JSON.parse(cleanedText)
-    if (!aiResponse.question || !aiResponse.category) {
-      throw new Error("Invalid AI response structure")
-    }
-
-    return aiResponse
   }
 
   private generateAdvancedQuestionPrompt(actualDifficulty: string): string {
@@ -606,64 +637,68 @@ Respond ONLY with valid JSON:
   }
 
   private async generateStrictAIAnalysis(question: string, answer: string): Promise<AnswerAnalysis> {
-    const result = await generateText({
-      model: google("gemini-1.5-flash"),
-      messages: [
-        {
-          role: "system",
-          content: `You are a senior interviewer known for honest, direct feedback. Be strict but constructive.
+    try {
+      const result = await generateText({
+        model: google("gemini-1.5-flash-latest"),
+        messages: [
+          {
+            role: "system",
+            content: `Analyze interview responses and provide constructive feedback.
 
-SCORING GUIDELINES (be harsh but fair):
-- 95-100: Exceptional - would hire immediately, demonstrates mastery
-- 85-94: Strong - good candidate, shows solid understanding
-- 75-84: Adequate - meets basic requirements, some gaps
-- 65-74: Weak - significant gaps, needs improvement
-- 50-64: Poor - major deficiencies, not ready for this role
-- Below 50: Unacceptable - fundamental misunderstanding
-
-FEEDBACK STYLE:
-- Be direct and honest about weaknesses
-- Give specific, actionable improvement suggestions
-- Include reality checks when necessary
-- Compare to industry standards
-- Don't sugarcoat - candidates need honest feedback
-
-Respond ONLY with valid JSON:
+IMPORTANT: Respond ONLY with valid JSON:
 {
-  "score": 75,
-  "detailedFeedback": "Honest, direct feedback paragraph",
-  "strengths": ["specific strength 1", "specific strength 2"],
-  "weaknesses": ["specific weakness 1", "specific weakness 2"],
-  "improvementSuggestions": ["actionable suggestion 1", "actionable suggestion 2"],
-  "idealAnswer": "What a strong answer would include",
-  "nextQuestionDirection": "same",
-  "followUpNeeded": false,
-  "realityCheck": "Honest assessment of readiness",
-  "industryStandard": "What top companies expect"
-}`,
-        },
-        {
-          role: "user",
-          content: `Analyze this ${this.context.jobRole} interview response with strict standards:
+"score": 85,
+"detailedFeedback": "Detailed feedback paragraph",
+"strengths": ["strength1", "strength2"],
+"weaknesses": ["weakness1", "weakness2"],
+"improvementSuggestions": ["suggestion1", "suggestion2"],
+"idealAnswer": "Better answer example",
+"nextQuestionDirection": "same",
+"followUpNeeded": false,
+"realityCheck": "Honest assessment",
+"industryStandard": "Industry expectations"
+}
 
+Scoring: 90-100 excellent, 80-89 good, 70-79 adequate, 60-69 weak, <60 poor`,
+          },
+          {
+            role: "user",
+            content: `Analyze this ${this.context.jobRole} interview response:
 Question: "${question}"
 Answer: "${answer}"
-Expected Level: ${this.context.difficulty}
-Actual Question Level: One level higher
+Difficulty: ${this.context.difficulty}`,
+          },
+        ],
+        temperature: 0.3,
+        maxTokens: 600,
+      })
 
-Be honest about gaps and provide reality check on interview readiness.`,
-        },
-      ],
-      temperature: 0.2, // Lower temperature for consistent, strict analysis
-      maxTokens: 800,
-    })
+      let cleanedText = result.text.trim()
+      if (cleanedText.startsWith("```json")) {
+        cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
+      } else if (cleanedText.startsWith("```")) {
+        cleanedText = cleanedText.replace(/^```\s*/, "").replace(/\s*```$/, "")
+      }
 
-    let cleanedText = result.text.trim()
-    if (cleanedText.startsWith("```json")) {
-      cleanedText = cleanedText.replace(/^```json\s*/, "").replace(/\s*```$/, "")
+      const analysis = JSON.parse(cleanedText)
+
+      // Validate and provide defaults for missing fields
+      return {
+        score: analysis.score || 70,
+        detailedFeedback: analysis.detailedFeedback || "Analysis completed",
+        strengths: analysis.strengths || ["Attempted to answer"],
+        weaknesses: analysis.weaknesses || ["Could provide more detail"],
+        improvementSuggestions: analysis.improvementSuggestions || ["Practice more examples"],
+        idealAnswer: analysis.idealAnswer || "A stronger answer would include specific examples",
+        nextQuestionDirection: analysis.nextQuestionDirection || "same",
+        followUpNeeded: analysis.followUpNeeded || false,
+        realityCheck: analysis.realityCheck || "Continue practicing to improve",
+        industryStandard: analysis.industryStandard || "Industry expects clear, detailed responses",
+      }
+    } catch (error) {
+      console.error("❌ AI analysis error:", error)
+      throw error
     }
-
-    return JSON.parse(cleanedText)
   }
 
   private generateStrictAnalysis(question: string, answer: string): AnswerAnalysis {
