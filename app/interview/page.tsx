@@ -22,6 +22,7 @@ import {
   Loader2,
   Brain,
   Zap,
+  AlertTriangle,
 } from "lucide-react"
 import { useAuth } from "@/contexts/AuthContext"
 import {
@@ -64,6 +65,8 @@ export default function InterviewPage() {
   const [showInterviewerComment, setShowInterviewerComment] = useState(false)
   const [aiInterviewer, setAiInterviewer] = useState<AIInterviewer | null>(null)
   const [isThinking, setIsThinking] = useState(false)
+  const [aiStatus, setAiStatus] = useState<"ready" | "working" | "error">("ready")
+  const [debugInfo, setDebugInfo] = useState<string[]>([])
 
   useEffect(() => {
     if (!loading && !user) {
@@ -81,6 +84,10 @@ export default function InterviewPage() {
     return () => clearInterval(interval)
   }, [interviewStarted])
 
+  const addDebugInfo = (info: string) => {
+    setDebugInfo((prev) => [...prev.slice(-4), `${new Date().toLocaleTimeString()}: ${info}`])
+  }
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
@@ -94,6 +101,9 @@ export default function InterviewPage() {
     }
 
     setIsGeneratingQuestion(true)
+    setAiStatus("working")
+    addDebugInfo("Starting AI interview setup...")
+
     try {
       // Initialize AI Interviewer
       const context: InterviewContext = {
@@ -107,16 +117,29 @@ export default function InterviewPage() {
         companyType: selectedCompanyType,
       }
 
+      addDebugInfo(`Creating AI interviewer for ${selectedJobRole}`)
       const interviewer = new AIInterviewer(context)
       setAiInterviewer(interviewer)
 
       // Generate first question
+      addDebugInfo("Generating first AI question...")
       const firstQuestion = await interviewer.generateNextQuestion()
+
+      if (firstQuestion.context.includes("Tailored question")) {
+        addDebugInfo("✅ AI question generated successfully")
+        setAiStatus("ready")
+      } else {
+        addDebugInfo("⚠️ Using fallback question - AI may not be working")
+        setAiStatus("error")
+      }
+
       setQuestions([firstQuestion])
       setInterviewStarted(true)
       setTimeElapsed(0)
     } catch (error) {
       console.error("Error starting interview:", error)
+      addDebugInfo(`❌ Error: ${error.message}`)
+      setAiStatus("error")
       alert("Failed to start AI interview. Please try again.")
     } finally {
       setIsGeneratingQuestion(false)
@@ -132,12 +155,16 @@ export default function InterviewPage() {
     setIsAnalyzing(true)
     setShowInterviewerComment(false)
     setIsThinking(true)
+    setAiStatus("working")
+    addDebugInfo("Analyzing answer with AI...")
 
     try {
       // Analyze the current answer
       const analysis = await aiInterviewer.analyzeAnswer(questions[currentQuestion].question, answer)
+      addDebugInfo(`AI analysis complete - Score: ${analysis.score}`)
 
       // Generate interviewer comment
+      addDebugInfo("Generating AI interviewer comment...")
       const comment = await aiInterviewer.generateInterviewerComment(analysis)
 
       // Update context
@@ -148,16 +175,21 @@ export default function InterviewPage() {
       setInterviewerComment(comment)
       setShowInterviewerComment(true)
       setIsThinking(false)
+      setAiStatus("ready")
 
       // Determine next action
       setTimeout(async () => {
         if (currentQuestion < 4) {
           // Generate next question or follow-up
           setIsGeneratingQuestion(true)
+          setAiStatus("working")
+          addDebugInfo("Generating next AI question...")
+
           let nextQuestion: AIResponse
 
           if (analysis.followUpNeeded && Math.random() > 0.3) {
             // 70% chance to ask follow-up if needed
+            addDebugInfo("Generating AI follow-up question...")
             nextQuestion = await aiInterviewer.generateFollowUpQuestion(
               questions[currentQuestion].question,
               answer,
@@ -168,19 +200,25 @@ export default function InterviewPage() {
             nextQuestion = await aiInterviewer.generateNextQuestion()
           }
 
+          addDebugInfo("✅ Next question generated")
           setQuestions([...questions, nextQuestion])
           setCurrentQuestion(currentQuestion + 1)
           setAnswer("")
           setShowInterviewerComment(false)
           setIsGeneratingQuestion(false)
+          setAiStatus("ready")
         } else {
           // Interview completed
+          addDebugInfo("Interview complete - generating summary...")
           handleCompleteInterview()
         }
       }, 2500)
     } catch (error) {
       console.error("Error processing answer:", error)
+      addDebugInfo(`❌ Error processing answer: ${error.message}`)
       setIsThinking(false)
+      setAiStatus("error")
+
       // Continue without analysis if there's an error
       setAnswers([...answers, answer])
       setAnswer("")
@@ -198,6 +236,7 @@ export default function InterviewPage() {
 
   const handleCompleteInterview = async () => {
     try {
+      addDebugInfo("Completing interview and saving data...")
       const finalAnswers = [...answers, answer]
       const finalAnalyses = [...analyses]
 
@@ -210,6 +249,7 @@ export default function InterviewPage() {
       // Generate comprehensive interview summary
       let interviewSummary = null
       try {
+        addDebugInfo("Generating AI interview summary...")
         interviewSummary = await generateInterviewSummary(
           selectedJobRole,
           selectedDifficulty,
@@ -217,8 +257,10 @@ export default function InterviewPage() {
           finalAnswers,
           finalAnalyses,
         )
+        addDebugInfo("✅ AI summary generated")
       } catch (error) {
         console.error("Error generating summary:", error)
+        addDebugInfo(`⚠️ Summary generation failed: ${error.message}`)
         // Provide fallback summary if generation fails
         interviewSummary = {
           overallFeedback: "You demonstrated good communication skills throughout the interview.",
@@ -243,39 +285,22 @@ export default function InterviewPage() {
 
       // Save to localStorage with error handling
       try {
-        // First check if we can stringify the data
         const interviewDataString = JSON.stringify(interviewData)
-
-        // Then save to localStorage
         const existingInterviews = JSON.parse(localStorage.getItem("userInterviews") || "[]")
         const updatedInterviews = [...existingInterviews, interviewData]
         localStorage.setItem("userInterviews", JSON.stringify(updatedInterviews))
         localStorage.setItem("lastInterview", interviewDataString)
+        addDebugInfo("✅ Interview data saved successfully")
       } catch (error) {
         console.error("Error saving interview data:", error)
-        // Create a simplified version of the data if there's a JSON error
-        const simplifiedData = {
-          jobRole: selectedJobRole,
-          difficulty: selectedDifficulty,
-          questions: questions.map((q) => ({ question: q.question, category: q.category, difficulty: q.difficulty })),
-          answers: finalAnswers,
-          analyses: finalAnalyses.map((a) => ({ score: a.score, strengths: a.strengths, weaknesses: a.weaknesses })),
-          timeElapsed,
-          completedAt: new Date().toISOString(),
-          overallScore,
-        }
-
-        try {
-          localStorage.setItem("lastInterview", JSON.stringify(simplifiedData))
-        } catch (e) {
-          console.error("Failed to save even simplified data:", e)
-        }
+        addDebugInfo(`❌ Save error: ${error.message}`)
       }
 
       // Navigate to results page
       router.push("/interview/results")
     } catch (error) {
       console.error("Error in handleCompleteInterview:", error)
+      addDebugInfo(`❌ Completion error: ${error.message}`)
       alert("There was an error completing your interview. Please try again.")
     }
   }
@@ -322,6 +347,18 @@ export default function InterviewPage() {
                   <Brain className="w-3 h-3 mr-1" />
                   Powered by GPT-4
                 </Badge>
+                {aiStatus === "working" && (
+                  <Badge className="bg-yellow-100 text-yellow-800">
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    AI Working
+                  </Badge>
+                )}
+                {aiStatus === "error" && (
+                  <Badge className="bg-red-100 text-red-800">
+                    <AlertTriangle className="w-3 h-3 mr-1" />
+                    AI Issue
+                  </Badge>
+                )}
               </div>
             </div>
 
@@ -423,6 +460,21 @@ export default function InterviewPage() {
                     </ul>
                   </AlertDescription>
                 </Alert>
+
+                {/* Debug Info */}
+                {debugInfo.length > 0 && (
+                  <Alert>
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      <strong>AI Status:</strong>
+                      <div className="mt-2 text-xs font-mono space-y-1">
+                        {debugInfo.map((info, index) => (
+                          <div key={index}>{info}</div>
+                        ))}
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
 
                 <Button
                   onClick={handleStartInterview}
@@ -537,12 +589,9 @@ export default function InterviewPage() {
                         <div>
                           <p className="font-medium text-gray-900 mb-2">AI Interviewer asks:</p>
                           <p className="text-lg text-gray-800">{questions[currentQuestion]?.question}</p>
-                          {questions[currentQuestion]?.context &&
-                            !questions[currentQuestion].context.includes("Fallback question") && (
-                              <p className="text-sm text-gray-600 mt-2 italic">
-                                Context: {questions[currentQuestion].context}
-                              </p>
-                            )}
+                          {questions[currentQuestion]?.context && (
+                            <p className="text-sm text-gray-600 mt-2 italic">{questions[currentQuestion].context}</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -688,6 +737,20 @@ export default function InterviewPage() {
                       <span className="text-gray-600">Duration:</span>
                       <span className="ml-2 font-medium">{formatTime(timeElapsed)}</span>
                     </div>
+                    <div>
+                      <span className="text-gray-600">AI Status:</span>
+                      <span
+                        className={`ml-2 font-medium ${
+                          aiStatus === "ready"
+                            ? "text-green-600"
+                            : aiStatus === "working"
+                              ? "text-yellow-600"
+                              : "text-red-600"
+                        }`}
+                      >
+                        {aiStatus === "ready" ? "✅ Active" : aiStatus === "working" ? "🔄 Processing" : "⚠️ Issues"}
+                      </span>
+                    </div>
                     {analyses.length > 0 && (
                       <div>
                         <span className="text-gray-600">Avg Score:</span>
@@ -698,6 +761,24 @@ export default function InterviewPage() {
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Debug Info Card */}
+                {debugInfo.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">AI Debug Info</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-xs font-mono space-y-1 max-h-32 overflow-y-auto">
+                        {debugInfo.map((info, index) => (
+                          <div key={index} className="text-gray-600">
+                            {info}
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </div>
           </div>
