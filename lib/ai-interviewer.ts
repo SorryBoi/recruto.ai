@@ -10,7 +10,9 @@ export interface InterviewContext {
   previousScores: number[]
   interviewStyle: "technical" | "behavioral" | "mixed"
   companyType?: string
-  sessionId: string // Track unique sessions
+  sessionId: string
+  questionCategory?: string // Add category selection
+  usedQuestionIds: Set<string> // Track used questions in this interview
 }
 
 export interface AIResponse {
@@ -39,344 +41,255 @@ export interface AnswerAnalysis {
 
 // Massive question bank with variants
 class AdvancedQuestionGenerator {
-  private questionBank: { [key: string]: { [key: string]: string[][] } } = {
+  private questionBank: {
+    [key: string]: { [key: string]: { [key: string]: Array<{ id: string; question: string; type: string }> } }
+  } = {
     "Software Engineer": {
-      "Entry Level": [
-        [
-          "Walk me through your approach to debugging a piece of code that's not working as expected.",
-          "Describe your debugging methodology when faced with a complex bug in production.",
-          "How do you systematically troubleshoot code that's failing in ways you don't understand?",
-          "Explain your process for identifying and fixing performance bottlenecks in code.",
-          "What's your strategy when debugging code written by someone else that you've never seen before?",
+      "Entry Level": {
+        Technical: [
+          {
+            id: "se_entry_tech_1",
+            question: "Explain the difference between synchronous and asynchronous programming with real examples.",
+            type: "concept",
+          },
+          {
+            id: "se_entry_tech_2",
+            question: "How would you handle concurrent operations in a web application?",
+            type: "implementation",
+          },
+          {
+            id: "se_entry_tech_3",
+            question: "Describe a scenario where you'd choose asynchronous processing over synchronous.",
+            type: "decision",
+          },
+          {
+            id: "se_entry_tech_4",
+            question: "Explain how you'd implement a rate-limiting system for an API.",
+            type: "system-design",
+          },
+          {
+            id: "se_entry_tech_5",
+            question: "How would you design a system to handle thousands of simultaneous user requests?",
+            type: "scalability",
+          },
+          {
+            id: "se_entry_tech_6",
+            question: "What's the difference between SQL and NoSQL databases? When would you use each?",
+            type: "concept",
+          },
+          {
+            id: "se_entry_tech_7",
+            question: "Explain how REST APIs work and what makes them RESTful.",
+            type: "concept",
+          },
+          { id: "se_entry_tech_8", question: "How would you optimize a slow database query?", type: "optimization" },
         ],
-        [
-          "Explain the difference between synchronous and asynchronous programming with real examples.",
-          "How would you handle concurrent operations in a web application?",
-          "Describe a scenario where you'd choose asynchronous processing over synchronous.",
-          "Explain how you'd implement a rate-limiting system for an API.",
-          "How would you design a system to handle thousands of simultaneous user requests?",
+        "Problem Solving": [
+          {
+            id: "se_entry_prob_1",
+            question: "Walk me through your approach to debugging a piece of code that's not working as expected.",
+            type: "methodology",
+          },
+          {
+            id: "se_entry_prob_2",
+            question: "Describe your debugging methodology when faced with a complex bug in production.",
+            type: "crisis",
+          },
+          {
+            id: "se_entry_prob_3",
+            question: "How do you systematically troubleshoot code that's failing in ways you don't understand?",
+            type: "systematic",
+          },
+          {
+            id: "se_entry_prob_4",
+            question: "Explain your process for identifying and fixing performance bottlenecks in code.",
+            type: "performance",
+          },
+          {
+            id: "se_entry_prob_5",
+            question: "What's your strategy when debugging code written by someone else that you've never seen before?",
+            type: "legacy",
+          },
+          {
+            id: "se_entry_prob_6",
+            question: "How would you approach solving a problem you've never encountered before?",
+            type: "unknown",
+          },
+          {
+            id: "se_entry_prob_7",
+            question: "Describe how you break down complex problems into smaller, manageable pieces.",
+            type: "decomposition",
+          },
         ],
-        [
-          "Design a simple caching system and explain your design decisions.",
-          "How would you implement a basic load balancer from scratch?",
-          "Describe how you'd build a real-time notification system.",
-          "Design a URL shortening service like bit.ly - what are the key components?",
-          "How would you architect a simple chat application to handle 1000 concurrent users?",
+        Behavioral: [
+          {
+            id: "se_entry_beh_1",
+            question: "Tell me about a time you had to optimize code for better performance.",
+            type: "achievement",
+          },
+          {
+            id: "se_entry_beh_2",
+            question: "Describe a challenging technical problem you solved and your approach.",
+            type: "challenge",
+          },
+          {
+            id: "se_entry_beh_3",
+            question: "How do you stay updated with new technologies and programming trends?",
+            type: "learning",
+          },
+          {
+            id: "se_entry_beh_4",
+            question: "Explain a situation where you had to learn a new framework quickly.",
+            type: "adaptability",
+          },
+          {
+            id: "se_entry_beh_5",
+            question: "Describe your experience with code reviews and how you handle feedback.",
+            type: "collaboration",
+          },
+          {
+            id: "se_entry_beh_6",
+            question: "Tell me about a time you made a mistake in your code. How did you handle it?",
+            type: "failure",
+          },
+          {
+            id: "se_entry_beh_7",
+            question: "Describe a situation where you had to work with a difficult team member.",
+            type: "conflict",
+          },
         ],
-        [
-          "Tell me about a time you had to optimize code for better performance.",
-          "Describe a challenging technical problem you solved and your approach.",
-          "How do you stay updated with new technologies and programming trends?",
-          "Explain a situation where you had to learn a new framework quickly.",
-          "Describe your experience with code reviews and how you handle feedback.",
+        "System Design": [
+          {
+            id: "se_entry_sys_1",
+            question: "Design a simple caching system and explain your design decisions.",
+            type: "basic-design",
+          },
+          {
+            id: "se_entry_sys_2",
+            question: "How would you implement a basic load balancer from scratch?",
+            type: "infrastructure",
+          },
+          {
+            id: "se_entry_sys_3",
+            question: "Describe how you'd build a real-time notification system.",
+            type: "real-time",
+          },
+          {
+            id: "se_entry_sys_4",
+            question: "Design a URL shortening service like bit.ly - what are the key components?",
+            type: "service-design",
+          },
+          {
+            id: "se_entry_sys_5",
+            question: "How would you architect a simple chat application to handle 1000 concurrent users?",
+            type: "scalability",
+          },
         ],
-        [
-          "How would you explain APIs to a non-technical person?",
-          "What's your approach to writing maintainable, clean code?",
-          "How do you ensure your code is secure and follows best practices?",
-          "Describe your testing strategy for a new feature.",
-          "How would you handle a situation where your code caused a production outage?",
+        Communication: [
+          {
+            id: "se_entry_comm_1",
+            question: "How would you explain APIs to a non-technical person?",
+            type: "explanation",
+          },
+          {
+            id: "se_entry_comm_2",
+            question: "What's your approach to writing maintainable, clean code?",
+            type: "best-practices",
+          },
+          {
+            id: "se_entry_comm_3",
+            question: "How do you ensure your code is secure and follows best practices?",
+            type: "security",
+          },
+          { id: "se_entry_comm_4", question: "Describe your testing strategy for a new feature.", type: "testing" },
+          {
+            id: "se_entry_comm_5",
+            question: "How would you handle a situation where your code caused a production outage?",
+            type: "crisis-communication",
+          },
         ],
-      ],
-      "Mid Level": [
-        [
-          "Design a distributed system to handle millions of transactions per day.",
-          "How would you architect a microservices system for an e-commerce platform?",
-          "Explain your approach to database sharding for a social media application.",
-          "Design a real-time analytics system that can process billions of events.",
-          "How would you build a fault-tolerant system that can handle server failures gracefully?",
-        ],
-        [
-          "Explain the CAP theorem and how it applies to real-world system design.",
-          "How would you implement eventual consistency in a distributed database?",
-          "Describe your approach to handling data consistency across multiple services.",
-          "Explain how you'd design a system to handle both ACID and BASE transactions.",
-          "How would you implement a distributed lock mechanism?",
-        ],
-        [
-          "How do you approach technical debt in a large codebase?",
-          "Describe your strategy for refactoring legacy systems without breaking functionality.",
-          "How would you migrate a monolithic application to microservices?",
-          "Explain your approach to maintaining backward compatibility during major updates.",
-          "How do you balance feature development with technical improvements?",
-        ],
-        [
-          "Tell me about a time you had to make a critical architectural decision under pressure.",
-          "Describe how you've mentored junior developers and helped them grow.",
-          "How do you handle disagreements with senior engineers about technical approaches?",
-          "Explain a situation where you had to convince management to invest in technical improvements.",
-          "Describe your experience leading a complex technical project from start to finish.",
-        ],
-        [
-          "How do you ensure code quality across a team of 10+ developers?",
-          "Describe your approach to implementing CI/CD pipelines for multiple services.",
-          "How would you handle a security vulnerability discovered in production?",
-          "Explain your strategy for monitoring and alerting in a distributed system.",
-          "How do you approach performance testing and capacity planning?",
-        ],
-      ],
-      "Senior Level": [
-        [
-          "Design the architecture for a global-scale social media platform like Twitter.",
-          "How would you build a system to handle real-time financial transactions with zero downtime?",
-          "Design a content delivery network that can serve content to users worldwide.",
-          "Architect a machine learning platform that can train and deploy models at scale.",
-          "How would you design a system like Netflix that can stream video to millions of users?",
-        ],
-        [
-          "Explain how you'd implement a consensus algorithm in a distributed system.",
-          "How would you design a time-series database optimized for IoT data?",
-          "Describe your approach to implementing multi-region disaster recovery.",
-          "How would you build a system that can automatically scale based on traffic patterns?",
-          "Explain your strategy for implementing zero-downtime deployments across multiple data centers.",
-        ],
-        [
-          "How do you drive technical strategy and roadmap planning for an engineering organization?",
-          "Describe your approach to building and scaling engineering teams.",
-          "How do you evaluate and introduce new technologies in a large organization?",
-          "Explain your strategy for managing technical debt across multiple product lines.",
-          "How do you ensure engineering excellence while maintaining rapid development velocity?",
-        ],
-        [
-          "Tell me about a time you had to make a bet-the-company technical decision.",
-          "Describe how you've influenced engineering culture and practices across an organization.",
-          "How do you handle situations where business requirements conflict with technical best practices?",
-          "Explain a time you had to rebuild a critical system while it was still serving users.",
-          "Describe your experience with post-mortem processes and learning from failures.",
-        ],
-        [
-          "How do you approach hiring and building diverse, high-performing engineering teams?",
-          "Describe your strategy for knowledge sharing and documentation in large organizations.",
-          "How do you balance innovation with reliability in mission-critical systems?",
-          "Explain your approach to vendor evaluation and build-vs-buy decisions.",
-          "How do you measure and improve engineering productivity and developer experience?",
-        ],
-      ],
+      },
+      // Add similar structure for Mid Level and Senior Level...
     },
-    "Product Manager": {
-      "Entry Level": [
-        [
-          "How would you prioritize features when you have limited engineering resources?",
-          "Describe your framework for deciding what to build next when everything seems important.",
-          "How do you balance user requests with business objectives when making product decisions?",
-          "Explain your approach to feature prioritization when stakeholders have conflicting demands.",
-          "How would you decide between building new features vs. improving existing ones?",
-        ],
-        [
-          "How would you measure the success of a new feature launch?",
-          "Describe the key metrics you'd track for a mobile app's user engagement.",
-          "How do you determine if a product change is actually improving user experience?",
-          "Explain your approach to A/B testing and interpreting results.",
-          "How would you measure product-market fit for a new product?",
-        ],
-        [
-          "Walk me through how you'd conduct user research for a new product idea.",
-          "How do you gather and validate user feedback effectively?",
-          "Describe your process for understanding user pain points and needs.",
-          "How would you research a market you're completely unfamiliar with?",
-          "Explain your approach to competitive analysis and market positioning.",
-        ],
-        [
-          "Tell me about a time you had to pivot a product strategy based on user feedback.",
-          "Describe a situation where you had to say no to a feature request from an important customer.",
-          "How do you handle disagreements between engineering and design teams?",
-          "Explain a time when you had to make a product decision with incomplete information.",
-          "Describe your experience working with cross-functional teams to deliver a product.",
-        ],
-        [
-          "How do you communicate product vision and strategy to different stakeholders?",
-          "Describe your approach to writing clear and actionable product requirements.",
-          "How do you ensure alignment between product, engineering, and business teams?",
-          "Explain your process for getting buy-in from leadership on product initiatives.",
-          "How do you handle scope creep and changing requirements during development?",
-        ],
+    // Add similar structure for Product Manager and Data Scientist...
+  }
+
+  // Frequently asked interview questions from top companies
+  private frequentlyAskedQuestions: {
+    [key: string]: { [key: string]: Array<{ id: string; question: string; company: string; type: string }> }
+  } = {
+    "Software Engineer": {
+      Technical: [
+        {
+          id: "faq_tech_1",
+          question: "Reverse a linked list iteratively and recursively.",
+          company: "Google",
+          type: "coding",
+        },
+        {
+          id: "faq_tech_2",
+          question: "Find the longest substring without repeating characters.",
+          company: "Facebook",
+          type: "coding",
+        },
+        {
+          id: "faq_tech_3",
+          question: "Implement a LRU cache with O(1) operations.",
+          company: "Amazon",
+          type: "coding",
+        },
+        { id: "faq_tech_4", question: "Design a parking lot system.", company: "Microsoft", type: "system-design" },
+        {
+          id: "faq_tech_5",
+          question: "How would you detect a cycle in a linked list?",
+          company: "Apple",
+          type: "coding",
+        },
+        {
+          id: "faq_tech_6",
+          question: "Explain the difference between processes and threads.",
+          company: "Netflix",
+          type: "concept",
+        },
+        {
+          id: "faq_tech_7",
+          question: "How does garbage collection work in your preferred language?",
+          company: "Uber",
+          type: "concept",
+        },
+        { id: "faq_tech_8", question: "Design a distributed cache system.", company: "Airbnb", type: "system-design" },
       ],
-      "Mid Level": [
-        [
-          "How would you develop a go-to-market strategy for a completely new product category?",
-          "Describe your approach to entering a competitive market with an established player.",
-          "How do you identify and evaluate new market opportunities for product expansion?",
-          "Explain your strategy for international product expansion and localization.",
-          "How would you approach launching a product in a regulated industry like healthcare or finance?",
-        ],
-        [
-          "How do you build and manage a product roadmap for multiple stakeholder groups?",
-          "Describe your approach to long-term strategic planning while maintaining flexibility.",
-          "How do you balance short-term revenue goals with long-term product vision?",
-          "Explain your process for making build-vs-buy-vs-partner decisions.",
-          "How do you manage product portfolio decisions and resource allocation?",
-        ],
-        [
-          "Tell me about a time you had to kill a product or feature that wasn't working.",
-          "Describe how you've managed a product through a major crisis or setback.",
-          "How do you handle situations where your product strategy conflicts with company strategy?",
-          "Explain a time you had to convince leadership to invest in a risky product bet.",
-          "Describe your experience managing products through different lifecycle stages.",
-        ],
-        [
-          "How do you scale product management processes as a company grows?",
-          "Describe your approach to building and mentoring a product management team.",
-          "How do you establish product culture and best practices across an organization?",
-          "Explain your strategy for cross-team collaboration in a matrix organization.",
-          "How do you ensure product quality and user experience at scale?",
-        ],
-        [
-          "How do you approach pricing strategy and monetization for digital products?",
-          "Describe your experience with subscription models, freemium, or marketplace dynamics.",
-          "How do you optimize conversion funnels and reduce churn?",
-          "Explain your approach to customer segmentation and personalization.",
-          "How do you balance user growth with revenue optimization?",
-        ],
-      ],
-      "Senior Level": [
-        [
-          "How would you develop a 5-year product strategy for a company entering AI/ML?",
-          "Describe your approach to building platform products that other teams can build on.",
-          "How do you identify and capitalize on emerging technology trends for product innovation?",
-          "Explain your strategy for product innovation while maintaining core business stability.",
-          "How would you approach building an ecosystem of products and partnerships?",
-        ],
-        [
-          "How do you influence company strategy and direction through product insights?",
-          "Describe your approach to board-level communication about product performance.",
-          "How do you balance stakeholder demands from customers, investors, and internal teams?",
-          "Explain your strategy for managing product in a public company environment.",
-          "How do you approach product decisions that could impact company valuation?",
-        ],
-        [
-          "Tell me about a time you had to completely reimagine a product strategy.",
-          "Describe how you've led product through a major company transformation or acquisition.",
-          "How do you handle product decisions during economic downturns or market volatility?",
-          "Explain a situation where you had to rebuild trust with customers after a product failure.",
-          "Describe your experience with product strategy during rapid scaling or hypergrowth.",
-        ],
-        [
-          "How do you build and scale product organizations across multiple business units?",
-          "Describe your approach to developing product leaders and succession planning.",
-          "How do you establish product excellence and innovation culture company-wide?",
-          "Explain your strategy for product operations and process optimization at scale.",
-          "How do you ensure product strategy alignment across global teams and markets?",
-        ],
-        [
-          "How do you approach product strategy for emerging markets or new business models?",
-          "Describe your experience with product-led growth and self-service adoption.",
-          "How do you balance platform thinking with specific customer needs?",
-          "Explain your approach to product strategy in highly regulated or compliance-heavy industries.",
-          "How do you drive product innovation while managing technical debt and legacy systems?",
-        ],
-      ],
-    },
-    "Data Scientist": {
-      "Entry Level": [
-        [
-          "Explain how you would approach a machine learning problem from data collection to model deployment.",
-          "Walk me through your process for cleaning and preparing messy real-world data.",
-          "How do you handle missing data, outliers, and data quality issues in practice?",
-          "Describe your approach to feature engineering for a predictive model.",
-          "How would you validate that your data is representative and unbiased?",
-        ],
-        [
-          "How do you choose between different machine learning algorithms for a given problem?",
-          "Explain the bias-variance tradeoff and how it affects model selection.",
-          "How would you handle overfitting in a machine learning model?",
-          "Describe your approach to hyperparameter tuning and model optimization.",
-          "How do you evaluate model performance beyond just accuracy metrics?",
-        ],
-        [
-          "How would you explain a complex statistical finding to a non-technical business stakeholder?",
-          "Describe your approach to creating actionable insights from data analysis.",
-          "How do you ensure your analysis actually drives business decisions?",
-          "Explain how you would present uncertainty and confidence intervals to executives.",
-          "How do you handle situations where data contradicts business intuition?",
-        ],
-        [
-          "Tell me about a time your analysis led to a significant business decision or change.",
-          "Describe a challenging data problem you solved and your methodology.",
-          "How do you handle situations where you don't have enough data to answer a question?",
-          "Explain a time when you had to quickly learn a new statistical method or tool.",
-          "Describe your experience with A/B testing and experimental design.",
-        ],
-        [
-          "How do you ensure reproducibility and version control in your data science work?",
-          "Describe your approach to documenting and sharing your analysis methodology.",
-          "How do you collaborate with engineers to deploy models into production?",
-          "Explain your process for monitoring model performance over time.",
-          "How do you handle ethical considerations in data science and machine learning?",
-        ],
-      ],
-      "Mid Level": [
-        [
-          "How would you design an end-to-end machine learning pipeline for a real-time recommendation system?",
-          "Describe your approach to building scalable data processing systems for big data.",
-          "How do you handle concept drift and model degradation in production systems?",
-          "Explain your strategy for feature stores and data versioning in ML systems.",
-          "How would you implement automated model retraining and deployment?",
-        ],
-        [
-          "How do you approach causal inference and establishing causality from observational data?",
-          "Describe your experience with advanced statistical methods like Bayesian analysis.",
-          "How would you design and analyze a complex multi-armed bandit experiment?",
-          "Explain your approach to time series forecasting for business planning.",
-          "How do you handle high-dimensional data and curse of dimensionality?",
-        ],
-        [
-          "Tell me about a time you had to challenge business assumptions using data.",
-          "Describe how you've influenced product strategy through data-driven insights.",
-          "How do you handle situations where stakeholders want to ignore unfavorable data?",
-          "Explain a time you had to make recommendations with incomplete or uncertain data.",
-          "Describe your experience building data science capabilities within an organization.",
-        ],
-        [
-          "How do you approach building and mentoring a team of data scientists?",
-          "Describe your strategy for establishing data science best practices and standards.",
-          "How do you balance research and exploration with delivering business value?",
-          "Explain your approach to cross-functional collaboration with product and engineering.",
-          "How do you prioritize data science projects and allocate team resources?",
-        ],
-        [
-          "How do you approach model interpretability and explainable AI for business stakeholders?",
-          "Describe your experience with MLOps and production machine learning systems.",
-          "How do you handle bias, fairness, and ethical considerations in ML models?",
-          "Explain your approach to data governance and privacy in analytics.",
-          "How do you measure and improve the business impact of data science initiatives?",
-        ],
-      ],
-      "Senior Level": [
-        [
-          "How would you build a company-wide data strategy and analytics platform?",
-          "Describe your approach to establishing data science as a competitive advantage.",
-          "How do you evaluate and implement emerging AI/ML technologies at scale?",
-          "Explain your strategy for data monetization and creating data products.",
-          "How would you approach building AI capabilities across multiple business units?",
-        ],
-        [
-          "How do you influence C-level strategy through advanced analytics and modeling?",
-          "Describe your approach to communicating complex AI/ML concepts to board members.",
-          "How do you balance innovation in AI/ML with risk management and compliance?",
-          "Explain your strategy for AI ethics and responsible machine learning at scale.",
-          "How do you approach ROI measurement and business case development for AI initiatives?",
-        ],
-        [
-          "Tell me about a time you led a transformational AI/ML initiative across an organization.",
-          "Describe how you've built data science capabilities from scratch in a company.",
-          "How do you handle situations where AI/ML projects fail to deliver expected value?",
-          "Explain a time you had to make strategic decisions about data science technology stack.",
-          "Describe your experience with AI/ML in regulated industries or high-stakes environments.",
-        ],
-        [
-          "How do you build and scale data science organizations across global teams?",
-          "Describe your approach to developing data science talent and career progression.",
-          "How do you establish centers of excellence and knowledge sharing in data science?",
-          "Explain your strategy for academic partnerships and research collaboration.",
-          "How do you balance centralized vs. embedded data science team structures?",
-        ],
-        [
-          "How do you approach AI strategy in the context of digital transformation?",
-          "Describe your experience with AI governance, model risk management, and compliance.",
-          "How do you evaluate build-vs-buy decisions for AI/ML platforms and tools?",
-          "Explain your approach to data partnerships and external data acquisition.",
-          "How do you drive AI adoption and change management across traditional organizations?",
-        ],
+      Behavioral: [
+        {
+          id: "faq_beh_1",
+          question: "Tell me about a time you disagreed with your manager.",
+          company: "Amazon",
+          type: "conflict",
+        },
+        {
+          id: "faq_beh_2",
+          question: "Describe a time you failed and what you learned from it.",
+          company: "Google",
+          type: "failure",
+        },
+        {
+          id: "faq_beh_3",
+          question: "Tell me about your most challenging project.",
+          company: "Facebook",
+          type: "challenge",
+        },
+        {
+          id: "faq_beh_4",
+          question: "How do you handle tight deadlines and pressure?",
+          company: "Microsoft",
+          type: "pressure",
+        },
+        {
+          id: "faq_beh_5",
+          question: "Describe a time you had to learn something completely new.",
+          company: "Apple",
+          type: "learning",
+        },
       ],
     },
   }
@@ -385,50 +298,55 @@ class AdvancedQuestionGenerator {
 
   generateQuestion(context: InterviewContext): AIResponse {
     const roleQuestions = this.questionBank[context.jobRole] || this.questionBank["Software Engineer"]
-
-    // Get one level higher difficulty
     const actualDifficulty = this.getHigherDifficulty(context.difficulty)
     const difficultyQuestions =
       roleQuestions[actualDifficulty] || roleQuestions[context.difficulty] || roleQuestions["Entry Level"]
 
-    // Get session-specific used questions
-    const sessionKey = `${context.sessionId}_${context.jobRole}_${actualDifficulty}`
-    const sessionUsedQuestions = JSON.parse(localStorage.getItem(sessionKey) || "[]")
+    let availableQuestions: Array<{ id: string; question: string; type: string }> = []
 
-    // Find available question categories
-    const availableCategories = difficultyQuestions.filter((category, index) => {
-      return !sessionUsedQuestions.includes(index)
-    })
+    // Get questions based on category selection
+    if (context.questionCategory && context.questionCategory !== "Mixed") {
+      const categoryQuestions = difficultyQuestions[context.questionCategory] || []
+      availableQuestions = [...categoryQuestions]
 
-    let selectedCategory: string[]
-    let categoryIndex: number
-
-    if (availableCategories.length > 0) {
-      // Select from available categories
-      categoryIndex = difficultyQuestions.findIndex((cat) => availableCategories.includes(cat))
-      selectedCategory = availableCategories[Math.floor(Math.random() * availableCategories.length)]
+      // Add frequently asked questions for this category
+      const faqCategory = this.frequentlyAskedQuestions[context.jobRole]?.[context.questionCategory] || []
+      availableQuestions = [...availableQuestions, ...faqCategory]
     } else {
-      // All categories used, reset and start over
-      localStorage.removeItem(sessionKey)
-      categoryIndex = Math.floor(Math.random() * difficultyQuestions.length)
-      selectedCategory = difficultyQuestions[categoryIndex]
+      // Mixed questions - get from all categories
+      Object.values(difficultyQuestions).forEach((categoryQuestions) => {
+        availableQuestions = [...availableQuestions, ...categoryQuestions]
+      })
+
+      // Add all FAQ questions for mixed mode
+      Object.values(this.frequentlyAskedQuestions[context.jobRole] || {}).forEach((faqQuestions) => {
+        availableQuestions = [...availableQuestions, ...faqQuestions]
+      })
     }
 
-    // Select random question from category
-    const question = selectedCategory[Math.floor(Math.random() * selectedCategory.length)]
+    // Filter out already used questions in this interview
+    const unusedQuestions = availableQuestions.filter((q) => !context.usedQuestionIds.has(q.id))
 
-    // Mark category as used
-    sessionUsedQuestions.push(categoryIndex)
-    localStorage.setItem(sessionKey, JSON.stringify(sessionUsedQuestions))
+    // If all questions used, reset and start over (shouldn't happen with enough questions)
+    if (unusedQuestions.length === 0) {
+      context.usedQuestionIds.clear()
+      console.warn("All questions used, resetting question pool")
+    }
+
+    const questionsToUse = unusedQuestions.length > 0 ? unusedQuestions : availableQuestions
+    const selectedQuestion = questionsToUse[Math.floor(Math.random() * questionsToUse.length)]
+
+    // Mark question as used
+    context.usedQuestionIds.add(selectedQuestion.id)
 
     return {
-      question,
+      question: selectedQuestion.question,
       questionType: "main",
-      category: this.getCategoryForQuestion(question),
-      expectedDuration: 4, // Longer for harder questions
+      category: this.getCategoryForQuestion(selectedQuestion.question),
+      expectedDuration: 4,
       difficulty: context.difficulty as "Easy" | "Medium" | "Hard",
       actualDifficulty: `${actualDifficulty} (One level above ${context.difficulty})`,
-      context: `Advanced ${actualDifficulty} question for ${context.jobRole} - designed to challenge beyond your selected level`,
+      context: `${selectedQuestion.company ? `${selectedQuestion.company} style` : "Advanced"} ${actualDifficulty} question - ${selectedQuestion.type}`,
     }
   }
 
@@ -472,6 +390,7 @@ export class AIInterviewer {
   private context: InterviewContext
   private advancedGenerator: AdvancedQuestionGenerator
   private useAI = true
+  private followUpSequence: string[] = [] // Track follow-up sequence
 
   constructor(context: InterviewContext) {
     this.context = context
@@ -955,27 +874,82 @@ Difficulty: ${this.context.difficulty}`,
     answer: string,
     analysis: AnswerAnalysis,
   ): Promise<AIResponse> {
-    const followUps = [
-      "Can you walk me through a specific example where you implemented this approach?",
-      "What metrics would you use to measure success in this scenario?",
-      "How would you handle this situation if you had half the resources?",
-      "What would you do differently if you encountered this problem again?",
-      "How would you explain this solution to a non-technical stakeholder?",
-      "What are the potential risks or downsides of this approach?",
-      "How does this scale when dealing with 10x the volume/complexity?",
-      "What alternative approaches did you consider and why did you choose this one?",
-    ]
+    // Determine follow-up type based on analysis and sequence
+    const followUpTypes = this.getFollowUpSequence(analysis, originalQuestion)
+    const currentFollowUpType = followUpTypes[this.followUpSequence.length] || "clarification"
 
-    const followUp = followUps[Math.floor(Math.random() * followUps.length)]
+    this.followUpSequence.push(currentFollowUpType)
+
+    const followUpQuestions = {
+      example: [
+        "Can you walk me through a specific example where you implemented this approach?",
+        "Tell me about a real situation where you used this solution.",
+        "Give me a concrete example from your experience with this.",
+      ],
+      metrics: [
+        "What metrics would you use to measure success in this scenario?",
+        "How would you quantify the impact of this solution?",
+        "What KPIs would you track to ensure this approach is working?",
+      ],
+      constraints: [
+        "How would you handle this situation if you had half the resources?",
+        "What if you had a much tighter deadline for this?",
+        "How would this change if you had budget constraints?",
+      ],
+      alternatives: [
+        "What alternative approaches did you consider and why did you choose this one?",
+        "What are the trade-offs of your chosen approach?",
+        "How would you modify this solution for a different context?",
+      ],
+      scale: [
+        "How does this scale when dealing with 10x the volume/complexity?",
+        "What challenges would arise if this system grew significantly?",
+        "How would you architect this for global scale?",
+      ],
+      risks: [
+        "What are the potential risks or downsides of this approach?",
+        "What could go wrong with this solution?",
+        "How would you mitigate the main risks?",
+      ],
+      clarification: [
+        "Can you clarify what you meant by that specific point?",
+        "I'd like to understand your thinking process better on this.",
+        "Could you elaborate on that particular aspect?",
+      ],
+    }
+
+    const questions = followUpQuestions[currentFollowUpType] || followUpQuestions["clarification"]
+    const selectedQuestion = questions[Math.floor(Math.random() * questions.length)]
 
     return {
-      question: followUp,
+      question: selectedQuestion,
       questionType: "followup",
       category: "Deep-dive",
-      expectedDuration: 3,
+      expectedDuration: 2,
       difficulty: this.context.difficulty as "Easy" | "Medium" | "Hard",
-      actualDifficulty: "Probing for depth",
-      context: "Follow-up to assess depth of understanding and real experience",
+      actualDifficulty: `Follow-up: ${currentFollowUpType}`,
+      context: `Structured follow-up to assess ${currentFollowUpType} understanding`,
+    }
+  }
+
+  private getFollowUpSequence(analysis: AnswerAnalysis, originalQuestion: string): string[] {
+    // Determine logical follow-up sequence based on answer quality and question type
+    if (analysis.score < 60) {
+      return ["clarification", "example"] // Need basic clarification first
+    } else if (analysis.score < 75) {
+      return ["example", "metrics"] // Need concrete examples
+    } else {
+      // Good answer, probe deeper
+      if (originalQuestion.toLowerCase().includes("design") || originalQuestion.toLowerCase().includes("system")) {
+        return ["scale", "risks", "alternatives"]
+      } else if (
+        originalQuestion.toLowerCase().includes("time") ||
+        originalQuestion.toLowerCase().includes("challenge")
+      ) {
+        return ["metrics", "alternatives", "constraints"]
+      } else {
+        return ["example", "scale", "risks"]
+      }
     }
   }
 

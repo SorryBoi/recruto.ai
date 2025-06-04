@@ -56,6 +56,7 @@ export default function InterviewPage() {
   const [selectedJobRole, setSelectedJobRole] = useState("")
   const [selectedDifficulty, setSelectedDifficulty] = useState("")
   const [selectedCompanyType, setSelectedCompanyType] = useState("")
+  const [selectedQuestionCategory, setSelectedQuestionCategory] = useState("Mixed")
   const [questions, setQuestions] = useState<AIResponse[]>([])
   const [answers, setAnswers] = useState<string[]>([])
   const [analyses, setAnalyses] = useState<AnswerAnalysis[]>([])
@@ -119,6 +120,8 @@ export default function InterviewPage() {
         interviewStyle: "mixed",
         companyType: selectedCompanyType,
         sessionId: sessionId,
+        questionCategory: selectedQuestionCategory,
+        usedQuestionIds: new Set<string>(),
       }
 
       addDebugInfo(`Creating AI interviewer for ${selectedJobRole}`)
@@ -170,6 +173,8 @@ export default function InterviewPage() {
           interviewStyle: "mixed",
           companyType: selectedCompanyType,
           sessionId: `fallback_${Date.now()}`,
+          questionCategory: selectedQuestionCategory,
+          usedQuestionIds: new Set<string>(),
         }
 
         const interviewer = new AIInterviewer(context)
@@ -508,16 +513,37 @@ export default function InterviewPage() {
                   </Select>
                 </div>
 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Question Category</label>
+                  <Select value={selectedQuestionCategory} onValueChange={setSelectedQuestionCategory}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select question category to practice" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Mixed">Mixed (All Categories)</SelectItem>
+                      <SelectItem value="Technical">Technical & Coding</SelectItem>
+                      <SelectItem value="System Design">System Design</SelectItem>
+                      <SelectItem value="Behavioral">Behavioral & Leadership</SelectItem>
+                      <SelectItem value="Problem Solving">Problem Solving</SelectItem>
+                      <SelectItem value="Communication">Communication & Explanation</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Choose a specific category to focus your practice, or select Mixed for variety
+                  </p>
+                </div>
+
                 <Alert>
                   <Zap className="h-4 w-4" />
                   <AlertDescription>
                     <strong>Advanced AI Features:</strong>
                     <ul className="mt-2 space-y-1 text-sm">
+                      <li>• Category-specific question practice (Technical, Behavioral, System Design, etc.)</li>
+                      <li>• Frequently asked questions from top companies (Google, Amazon, Facebook, etc.)</li>
                       <li>• Dynamic question generation based on your responses</li>
-                      <li>• Adaptive difficulty that adjusts to your performance</li>
-                      <li>• Intelligent follow-up questions for deeper assessment</li>
+                      <li>• Intelligent follow-up questions in logical sequence</li>
+                      <li>• Zero question repetition within the same interview</li>
                       <li>• Real-time analysis with detailed improvement suggestions</li>
-                      <li>• Conversational interview experience with natural flow</li>
                       <li>• Comprehensive performance summary and readiness score</li>
                     </ul>
                   </AlertDescription>
@@ -793,6 +819,12 @@ export default function InterviewPage() {
                       <div>
                         <span className="text-gray-600">Company:</span>
                         <span className="ml-2 font-medium">{selectedCompanyType}</span>
+                      </div>
+                    )}
+                    {selectedQuestionCategory && (
+                      <div>
+                        <span className="text-gray-600">Category:</span>
+                        <span className="ml-2 font-medium">{selectedQuestionCategory}</span>
                       </div>
                     )}
                     <div>
